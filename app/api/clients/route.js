@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { 
+  dbFetchClients, 
+  dbCreateClient, 
+  dbUpdateClient, 
+  dbDeleteClient,
+  dbFetchInvoices,
+  dbFetchQuotations
+} from '@/lib/db_helper';
 
 export async function GET() {
   try {
-    const { data: clients, error } = await supabase
-      .from('clients')
-      .select('*')
-      .order('name', { ascending: true });
-
-    if (error) throw error;
-    return NextResponse.json(clients || []);
+    const clients = await dbFetchClients();
+    return NextResponse.json(clients);
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -19,7 +21,6 @@ export async function POST(request) {
   try {
     const data = await request.json();
 
-    // Standardize input property names to handle both frontend styles
     const name = data.name;
     const contact_person = data.contact_person || data.contact;
     const mobile = data.mobile;
@@ -35,26 +36,20 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const { data: newClient, error } = await supabase
-      .from('clients')
-      .insert([
-        {
-          name,
-          contact_person,
-          mobile,
-          email,
-          address,
-          city,
-          state,
-          pin,
-          gstin,
-          pan
-        }
-      ])
-      .select()
-      .single();
+    const payload = {
+      name,
+      contact_person: contact_person || null,
+      mobile,
+      email: email || null,
+      address,
+      city,
+      state: state || null,
+      pin,
+      gstin: gstin || null,
+      pan: pan || null
+    };
 
-    if (error) throw error;
+    const newClient = await dbCreateClient(payload);
     return NextResponse.json(newClient);
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -85,25 +80,20 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const { data: updatedClient, error } = await supabase
-      .from('clients')
-      .update({
-        name,
-        contact_person,
-        mobile,
-        email,
-        address,
-        city,
-        state,
-        pin,
-        gstin,
-        pan
-      })
-      .eq('id', id)
-      .select()
-      .single();
+    const payload = {
+      name,
+      contact_person: contact_person || null,
+      mobile,
+      email: email || null,
+      address,
+      city,
+      state: state || null,
+      pin,
+      gstin: gstin || null,
+      pan: pan || null
+    };
 
-    if (error) throw error;
+    const updatedClient = await dbUpdateClient(id, payload);
     return NextResponse.json(updatedClient);
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -120,33 +110,19 @@ export async function DELETE(request) {
     }
 
     // Check if client has existing invoices or quotations
-    const { count: invoiceCount, error: invError } = await supabase
-      .from('invoices')
-      .select('*', { count: 'exact', head: true })
-      .eq('client_id', id);
+    const invoices = await dbFetchInvoices();
+    const invoiceCount = invoices.filter(inv => inv.client_id == id).length;
 
-    if (invError) throw invError;
+    const quotations = await dbFetchQuotations();
+    const quotationCount = quotations.filter(q => q.client_id == id).length;
 
-    const { count: quotationCount, error: quotError } = await supabase
-      .from('quotations')
-      .select('*', { count: 'exact', head: true })
-      .eq('client_id', id);
-
-    if (quotError) throw quotError;
-
-    if ((invoiceCount || 0) > 0 || (quotationCount || 0) > 0) {
+    if (invoiceCount > 0 || quotationCount > 0) {
       return NextResponse.json({ 
         error: 'Cannot delete client. Client is referenced in existing invoices or quotations.' 
       }, { status: 400 });
     }
 
-    const { error: deleteError } = await supabase
-      .from('clients')
-      .delete()
-      .eq('id', id);
-
-    if (deleteError) throw deleteError;
-
+    await dbDeleteClient(id);
     return NextResponse.json({ success: true, message: 'Client deleted successfully' });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

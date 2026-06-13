@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { dbFetchSettings, dbUpdateSettings } from '@/lib/db_helper';
 
 const defaultSettings = {
   id: 1,
@@ -30,32 +30,15 @@ function formatSettings(settings) {
 
 export async function GET() {
   try {
-    const { data: settings, error } = await supabase
-      .from('company_settings')
-      .select('*')
-      .eq('id', 1)
-      .maybeSingle();
-
-    if (error) throw error;
-
+    const settings = await dbFetchSettings();
     if (!settings) {
-      // Auto-seed default settings
-      const { data: seeded, error: seedError } = await supabase
-        .from('company_settings')
-        .insert([defaultSettings])
-        .select()
-        .single();
-      
-      if (seedError) {
-        // Table might not exist or insert failed, return default settings anyway as fallback
-        return NextResponse.json(formatSettings(defaultSettings));
-      }
+      const seeded = await dbUpdateSettings(defaultSettings);
       return NextResponse.json(formatSettings(seeded));
     }
-
     return NextResponse.json(formatSettings(settings));
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // If table not set up yet or error, fallback to defaults
+    return NextResponse.json(formatSettings(defaultSettings));
   }
 }
 
@@ -75,14 +58,7 @@ export async function PUT(request) {
     const account_no = data.account_no !== undefined ? data.account_no : data.accountNo;
     const ifsc_code = data.ifsc_code !== undefined ? data.ifsc_code : data.ifscCode;
 
-    // Check if settings row exists
-    const { data: existing } = await supabase
-      .from('company_settings')
-      .select('id')
-      .eq('id', 1)
-      .maybeSingle();
-
-    const updatePayload = {
+    const payload = {
       name,
       address,
       phone,
@@ -96,29 +72,8 @@ export async function PUT(request) {
       ifsc_code
     };
 
-    let result;
-    if (existing) {
-      const { data: updated, error } = await supabase
-        .from('company_settings')
-        .update(updatePayload)
-        .eq('id', 1)
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = updated;
-    } else {
-      const { data: inserted, error } = await supabase
-        .from('company_settings')
-        .insert([{ id: 1, ...updatePayload }])
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = inserted;
-    }
-
-    return NextResponse.json(formatSettings(result));
+    const updated = await dbUpdateSettings(payload);
+    return NextResponse.json(formatSettings(updated));
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
