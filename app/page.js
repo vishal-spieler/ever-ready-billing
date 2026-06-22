@@ -51,13 +51,28 @@ const Logo = ({ width = 140, height = 90, theme = 'light' }) => {
   );
 };
 
+const CompanyStamp = ({ size = 130 }) => (
+  <img src="/stamp.png" alt="Company Stamp" style={{ width: size, height: size, objectFit: 'contain' }} />
+);
+
+
+
 const EverReadySystem = () => {
   const [currentPage, setCurrentPage] = useState('dashboard'); // dashboard, invoices, quotations, clients, settings, ledger, reports, invoice-detail
   const [invoices, setInvoices] = useState([]);
   const [quotations, setQuotations] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [uploadedPOs, setUploadedPOs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [clients, setClients] = useState([]);
+
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
   
+
   // Detail Invoice selection
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
   const [detailedInvoice, setDetailedInvoice] = useState(null);
@@ -83,15 +98,18 @@ const EverReadySystem = () => {
   // Modals visibility
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showQuotationModal, setShowQuotationModal] = useState(false);
+  const [showPurchaseOrderModal, setShowPurchaseOrderModal] = useState(false);
+  const [showUploadPOModal, setShowUploadPOModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
-  const [previewType, setPreviewType] = useState('invoice'); // invoice, quotation, ledger, receipt
+  const [previewType, setPreviewType] = useState('invoice'); // invoice, quotation, purchase_order, ledger, receipt
   const [editingClientId, setEditingClientId] = useState(null);
   const [editingInvoiceId, setEditingInvoiceId] = useState(null);
   const [editingQuotationId, setEditingQuotationId] = useState(null);
+  const [editingPurchaseOrderId, setEditingPurchaseOrderId] = useState(null);
   const [editingPaymentId, setEditingPaymentId] = useState(null);
   const [currentInvoice, setCurrentInvoice] = useState({
     invoiceNo: '',
@@ -132,6 +150,35 @@ const EverReadySystem = () => {
     grossTotal: 0
   });
 
+  const [currentPurchaseOrder, setCurrentPurchaseOrder] = useState({
+    poNo: '',
+    poDate: new Date().toISOString().split('T')[0],
+    validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    clientId: '',
+    vendor_or_client: 'CLIENT',
+    items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+    taxType: 'CGST_SGST',
+    cgstRate: 9,
+    sgstRate: 9,
+    igstRate: 18,
+    subtotal: 0,
+    discount: 0,
+    transportCharges: 0,
+    cgstAmount: 0,
+    sgstAmount: 0,
+    igstAmount: 0,
+    grossTotal: 0
+  });
+
+  const [currentUploadedPO, setCurrentUploadedPO] = useState({
+    clientId: '',
+    vendor_or_client: 'CLIENT',
+    fileName: '',
+    fileType: '',
+    fileData: '',
+    notes: ''
+  });
+
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState([]);
 
@@ -159,6 +206,12 @@ const EverReadySystem = () => {
   const [ledgerStartDate, setLedgerStartDate] = useState('');
   const [ledgerEndDate, setLedgerEndDate] = useState('');
   const [ledgerEntries, setLedgerEntries] = useState([]);
+  const [selectedClientOverview, setSelectedClientOverview] = useState(null);
+  const [clientOverviewTab, setClientOverviewTab] = useState('invoices');
+  const [clientOverviewDateFrom, setClientOverviewDateFrom] = useState('');
+  const [clientOverviewDateTo, setClientOverviewDateTo] = useState('');
+  const [clientOverviewPage, setClientOverviewPage] = useState(1);
+  const CLIENT_OVERVIEW_PAGE_SIZE = 6;
 
   // Reports state
   const [reportStartDate, setReportStartDate] = useState('');
@@ -267,6 +320,8 @@ const EverReadySystem = () => {
         fetchClients(),
         fetchInvoices(),
         fetchQuotations(),
+        fetchPurchaseOrders(),
+        fetchUploadedPOs(),
         fetchNotifications()
       ]);
     } catch (err) {
@@ -277,7 +332,13 @@ const EverReadySystem = () => {
   };
 
   useEffect(() => {
-    loadAllData();
+    // Check auth
+    if (localStorage.getItem('ever_ready_auth') === 'true') {
+      setIsAuthenticated(true);
+      loadAllData();
+    } else {
+      setLoading(false);
+    }
   }, []);
 
   // Recalculates stats on invoice or client updates
@@ -297,6 +358,18 @@ const EverReadySystem = () => {
     const res = await fetch('/api/clients');
     const data = await res.json();
     if (!data.error && Array.isArray(data)) setClients(data);
+  };
+
+  const fetchPurchaseOrders = async () => {
+    const res = await fetch('/api/purchase-orders');
+    const data = await res.json();
+    if (!data.error && Array.isArray(data)) setPurchaseOrders(data);
+  };
+
+  const fetchUploadedPOs = async () => {
+    const res = await fetch('/api/uploaded-pos');
+    const data = await res.json();
+    if (!data.error && Array.isArray(data)) setUploadedPOs(data);
   };
 
   const fetchInvoices = async () => {
@@ -1060,6 +1133,232 @@ const EverReadySystem = () => {
   };
 
   // ═══════════════════════════════════════════════════════════════════
+  // AUTH HANDLERS
+  // ═══════════════════════════════════════════════════════════════════
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword })
+      });
+      const data = await res.json();
+      if (data.success) {
+        localStorage.setItem('ever_ready_auth', 'true');
+        setIsAuthenticated(true);
+        loadAllData();
+      } else {
+        setLoginError(data.message || 'Invalid credentials');
+      }
+    } catch (err) {
+      setLoginError('Server error. Please try again.');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('ever_ready_auth');
+    setIsAuthenticated(false);
+    setLoginUsername('');
+    setLoginPassword('');
+    setCurrentPage('dashboard');
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PURCHASE ORDER CRUDS
+  // ═══════════════════════════════════════════════════════════════════
+  const addPurchaseOrderItem = () => {
+    setCurrentPurchaseOrder(prev => ({
+      ...prev,
+      items: [...prev.items, { sr: prev.items.length + 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }]
+    }));
+  };
+
+  const removePurchaseOrderItem = (index) => {
+    setCurrentPurchaseOrder(prev => {
+      const newItems = prev.items.filter((_, i) => i !== index).map((item, idx) => ({ ...item, sr: idx + 1 }));
+      const totals = calculateTotals(newItems, prev.taxType, prev.cgstRate, prev.sgstRate, prev.igstRate, prev.discount, prev.transportCharges);
+      return { ...prev, items: newItems, ...totals };
+    });
+  };
+
+  const openAddPurchaseOrderModal = () => {
+    setCurrentPurchaseOrder({
+      poNo: `PO-${new Date().getFullYear()}-${String(purchaseOrders.length + 1).padStart(3, '0')}`,
+      poDate: new Date().toISOString().split('T')[0],
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      clientId: '',
+      vendor_or_client: 'CLIENT',
+      items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+      taxType: 'CGST_SGST',
+      cgstRate: 9,
+      sgstRate: 9,
+      igstRate: 18,
+      subtotal: 0,
+      discount: 0,
+      transportCharges: 0,
+      cgstAmount: 0,
+      sgstAmount: 0,
+      igstAmount: 0,
+      grossTotal: 0
+    });
+    setEditingPurchaseOrderId(null);
+    setShowPurchaseOrderModal(true);
+  };
+
+  const openEditPurchaseOrderModal = (po) => {
+    setCurrentPurchaseOrder({
+      ...po,
+      poNo: po.poNo || po.po_no || '',
+      poDate: po.poDate || po.po_date || new Date().toISOString().split('T')[0],
+      validUntil: po.validUntil || po.valid_until || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      clientId: po.clientId || po.client_id || '',
+      vendor_or_client: po.vendor_or_client || 'CLIENT',
+      taxType: po.taxType || po.tax_type || 'CGST_SGST',
+      cgstRate: po.cgstRate ?? po.cgst_rate ?? 9,
+      sgstRate: po.sgstRate ?? po.sgst_rate ?? 9,
+      igstRate: po.igstRate ?? po.igst_rate ?? 18,
+      subtotal: po.subtotal ?? 0,
+      discount: po.discount ?? 0,
+      transportCharges: po.transportCharges ?? po.transport_charges ?? 0,
+      cgstAmount: po.cgstAmount ?? po.cgst_amount ?? 0,
+      sgstAmount: po.sgstAmount ?? po.sgst_amount ?? 0,
+      igstAmount: po.igstAmount ?? po.igst_amount ?? 0,
+      grossTotal: po.grossTotal ?? po.gross_total ?? 0,
+      items: po.items && po.items.length > 0 ? po.items.map(item => ({
+        ...item,
+        desc: item.desc || item.description || ''
+      })) : [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }]
+    });
+    setEditingPurchaseOrderId(po.id);
+    setShowPurchaseOrderModal(true);
+  };
+
+  const closePurchaseOrderModal = () => {
+    setShowPurchaseOrderModal(false);
+    setEditingPurchaseOrderId(null);
+  };
+
+  const savePurchaseOrder = async () => {
+    if (!currentPurchaseOrder.clientId || !currentPurchaseOrder.poNo) {
+      showToast('Please select a client/vendor and specify PO No', 'warning');
+      return;
+    }
+    const hasEmptyItems = currentPurchaseOrder.items.some(i => !i.desc || i.qty <= 0 || i.rate <= 0);
+    if (hasEmptyItems) {
+      showToast('Please complete all item descriptions and values', 'warning');
+      return;
+    }
+
+    try {
+      const url = editingPurchaseOrderId ? `/api/purchase-orders?id=${editingPurchaseOrderId}` : '/api/purchase-orders';
+      const method = editingPurchaseOrderId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentPurchaseOrder)
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        showToast('Error saving purchase order: ' + data.error, 'error');
+        return;
+      }
+
+      closePurchaseOrderModal();
+      await fetchPurchaseOrders();
+      await fetchNotifications();
+      showToast(editingPurchaseOrderId ? 'Purchase Order updated!' : 'Purchase Order created!', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to save purchase order', 'error');
+    }
+  };
+
+  const deletePurchaseOrder = async (id) => {
+    if (!confirm('Are you sure you want to delete this purchase order?')) return;
+    try {
+      const res = await fetch(`/api/purchase-orders?id=${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.error) {
+        showToast('Error deleting purchase order: ' + data.error, 'error');
+        return;
+      }
+      await fetchPurchaseOrders();
+      await fetchNotifications();
+      showToast('Purchase Order deleted', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to delete purchase order', 'error');
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // UPLOAD PO HANDLERS
+  // ═══════════════════════════════════════════════════════════════════
+  const saveUploadedPO = async () => {
+    if (!currentUploadedPO.clientId || !currentUploadedPO.fileData) {
+      showToast('Please select a client/vendor and upload a file', 'warning');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/uploaded-pos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...currentUploadedPO,
+          upload_date: new Date().toISOString()
+        })
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        showToast('Error saving uploaded PO: ' + data.error, 'error');
+        return;
+      }
+
+      setShowUploadPOModal(false);
+      setCurrentUploadedPO({
+        clientId: '',
+        vendor_or_client: 'CLIENT',
+        fileName: '',
+        fileType: '',
+        fileData: '',
+        notes: ''
+      });
+      await fetchUploadedPOs();
+      showToast('PO Uploaded successfully!', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to upload PO', 'error');
+    }
+  };
+
+  const deleteUploadedPO = async (id) => {
+    if (!confirm('Are you sure you want to delete this uploaded PO?')) return;
+    try {
+      const res = await fetch(`/api/uploaded-pos?id=${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.error) {
+        showToast('Error deleting uploaded PO: ' + data.error, 'error');
+        return;
+      }
+      await fetchUploadedPOs();
+      showToast('Uploaded PO deleted', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to delete uploaded PO', 'error');
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // RENDER HELPERS
+  // ═══════════════════════════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════════════════════════════
   // NOTIFICATION HANDLERS
   // ═══════════════════════════════════════════════════════════════════
   const markNotificationAsRead = async (id) => {
@@ -1136,10 +1435,19 @@ const EverReadySystem = () => {
   // ═══════════════════════════════════════════════════════════════════
   const DocumentPreview = ({ type, data }) => {
     const selectedClient = clients.find(c => c.id == data.clientId || c.id == data.client_id);
-    const docTitle = type === 'invoice' ? 'INVOICE' : 'QUOTATION';
-    const docNumber = type === 'invoice' ? (data.invoiceNo || data.invoice_no) : (data.quotationNo || data.quotation_no);
-    const docDate = type === 'invoice' ? (data.invoiceDate || data.invoice_date) : (data.quotationDate || data.quotation_date);
-    const validUntilRow = type === 'quotation' ? (
+    let docTitle = 'INVOICE';
+    if (type === 'quotation') docTitle = 'QUOTATION';
+    if (type === 'purchase_order') docTitle = 'PURCHASE ORDER';
+    
+    let docNumber = data.invoiceNo || data.invoice_no;
+    if (type === 'quotation') docNumber = data.quotationNo || data.quotation_no;
+    if (type === 'purchase_order') docNumber = data.poNo || data.po_no;
+
+    let docDate = data.invoiceDate || data.invoice_date;
+    if (type === 'quotation') docDate = data.quotationDate || data.quotation_date;
+    if (type === 'purchase_order') docDate = data.poDate || data.po_date;
+
+    const validUntilRow = (type === 'quotation' || type === 'purchase_order') ? (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', fontSize: '11px' }}>
         <span><strong>Valid Until:</strong></span>
         <span>{data.validUntil || data.valid_until}</span>
@@ -1193,8 +1501,8 @@ const EverReadySystem = () => {
             )}
           </div>
           <div style={{ textAlign: 'right', fontSize: '11px' }}>
-            <p><strong>{type === 'invoice' ? 'Invoice' : 'Quotation'} Date:</strong> {docDate}</p>
-            <p><strong>{type === 'invoice' ? 'Invoice' : 'Quotation'} No.:</strong> {docNumber}</p>
+            <p><strong>{type === 'invoice' ? 'Invoice' : type === 'quotation' ? 'Quotation' : 'PO'} Date:</strong> {docDate}</p>
+            <p><strong>{type === 'invoice' ? 'Invoice' : type === 'quotation' ? 'Quotation' : 'PO'} No.:</strong> {docNumber}</p>
             {type === 'invoice' && (
               <>
                 <p><strong>PO No.:</strong> {data.poNo || data.po_no || '—'}</p>
@@ -1299,11 +1607,14 @@ const EverReadySystem = () => {
         <div style={{ marginTop: '40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', textAlign: 'center', fontSize: '10px' }}>
           <div>
             <p style={{ marginBottom: '60px' }}>Receiver</p>
-            <p>Stamp & Sign</p>
+            <p>Sign</p>
           </div>
-          <div>
-            <p style={{ marginBottom: '60px' }}>For EVER READY ENGINEERS</p>
-            <p>Stamp & Sign</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <p style={{ marginBottom: '10px' }}>For {company.name}</p>
+            <div style={{ marginBottom: '10px' }}>
+              <CompanyStamp />
+            </div>
+            <p>Authorised Signatory</p>
           </div>
         </div>
       </div>
@@ -1359,17 +1670,52 @@ const EverReadySystem = () => {
     { id: 'dashboard', label: '📊 Dashboard' },
     { id: 'invoices', label: '🧾 Invoices' },
     { id: 'quotations', label: '📋 Quotations' },
+    { id: 'purchase-orders', label: '📦 Purchase Orders' },
+    { id: 'upload-po', label: '📤 Upload PO' },
     { id: 'clients', label: '🏢 Clients' },
     { id: 'ledger', label: '🏛️ Ledger Statement' },
     { id: 'reports', label: '📊 Reports & GST' },
     { id: 'settings', label: '⚙️ Settings' },
   ];
 
+  if (!isAuthenticated) {
+    return (
+      <div style={{ display: 'flex', minHeight: '100vh', background: '#111d33', color: 'white', fontFamily: "'Exo 2', sans-serif", alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ background: '#152035', padding: '40px', borderRadius: '12px', border: '1px solid rgba(240,165,0,.18)', width: '100%', maxWidth: '400px', textAlign: 'center' }}>
+          <Logo width={180} height={120} theme="dark" />
+          <h2 style={{ margin: '20px 0', fontSize: '24px', fontWeight: 'bold' }}>System Login</h2>
+          {loginError && <div style={{ background: '#c0392b', color: 'white', padding: '10px', borderRadius: '8px', marginBottom: '20px', fontSize: '13px' }}>{loginError}</div>}
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <input 
+              type="text" 
+              placeholder="Username" 
+              value={loginUsername} 
+              onChange={e => setLoginUsername(e.target.value)} 
+              required 
+              style={{ padding: '12px', borderRadius: '8px', border: '1px solid rgba(240,165,0,.3)', background: '#111d33', color: 'white' }} 
+            />
+            <input 
+              type="password" 
+              placeholder="Password" 
+              value={loginPassword} 
+              onChange={e => setLoginPassword(e.target.value)} 
+              required 
+              style={{ padding: '12px', borderRadius: '8px', border: '1px solid rgba(240,165,0,.3)', background: '#111d33', color: 'white' }} 
+            />
+            <button type="submit" style={{ background: '#F0A500', color: '#111d33', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px', marginTop: '10px' }}>
+              Login
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#111d33', color: 'white', fontFamily: "'Exo 2', sans-serif" }}>
       
       {/* TOAST SYSTEM */}
-      <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div className="no-print" style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {toasts.map(toast => (
           <div key={toast.id} style={{
             background: toast.type === 'error' ? '#c0392b' : toast.type === 'warning' ? '#d35400' : toast.type === 'info' ? '#2980b9' : '#27ae60',
@@ -1419,7 +1765,15 @@ const EverReadySystem = () => {
             </button>
           ))}
         </nav>
-        <div style={{ borderTop: '1px solid rgba(240,165,0,.18)', paddingTop: '16px', fontSize: '11px' }}>
+        <div style={{ borderTop: '1px solid rgba(240,165,0,.18)', paddingTop: '16px', fontSize: '11px', textAlign: 'center' }}>
+          <button 
+            onClick={handleLogout}
+            style={{
+              width: '100%', padding: '10px', background: 'transparent', border: '1px solid #c0392b', color: '#e74c3c', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '16px', transition: 'all 0.2s'
+            }}
+          >
+            Logout
+          </button>
           <p style={{ fontWeight: 'bold', color: '#F0A500' }}>{company.name}</p>
           <p style={{ color: '#8a96b0', margin: '4px 0' }}>GSTIN: {company.gstin}</p>
         </div>
@@ -1435,6 +1789,8 @@ const EverReadySystem = () => {
             {currentPage === 'invoices' && '🧾 Invoices Tracking'}
             {currentPage === 'invoice-detail' && `🧾 Invoice ${detailedInvoice?.invoice_no || ''}`}
             {currentPage === 'quotations' && '📋 Quotations Estimate'}
+            {currentPage === 'purchase-orders' && '📦 Purchase Orders'}
+            {currentPage === 'upload-po' && '📤 Upload PO'}
             {currentPage === 'clients' && '🏢 Client Registry'}
             {currentPage === 'ledger' && '🏛️ Client Statement Ledger'}
             {currentPage === 'reports' && '📊 Reports & GST Breakdowns'}
@@ -1884,7 +2240,7 @@ const EverReadySystem = () => {
                         <button onClick={() => openAddPaymentModal(detailedInvoice)} style={{ padding: '8px 16px', background: '#27ae60', border: 'none', borderRadius: '6px', color: 'white', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>+ Add Payment</button>
                       )}
                     </div>
-                    {detailedInvoice.payments.length === 0 ? (
+                    {!detailedInvoice.payments || detailedInvoice.payments.length === 0 ? (
                       <p style={{ color: '#8a96b0', fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No transactions recorded for this invoice estimate.</p>
                     ) : (
                       <div style={{ overflowX: 'auto' }}>
@@ -1899,7 +2255,7 @@ const EverReadySystem = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {detailedInvoice.payments.map((p, i) => (
+                            {(detailedInvoice.payments || []).map((p, i) => (
                               <tr key={i} style={{ borderBottom: '1px solid rgba(138,150,176,.15)' }}>
                                 <td style={{ padding: '10px' }}>{p.payment_date}</td>
                                 <td style={{ padding: '10px' }}>{p.payment_mode}</td>
@@ -2062,6 +2418,160 @@ const EverReadySystem = () => {
             </div>
           )}
 
+          {/* PURCHASE ORDERS VIEW */}
+          {currentPage === 'purchase-orders' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div style={{ position: 'relative', width: '400px' }}>
+                  <Search size={18} style={{ position: 'absolute', left: '12px', top: '10px', color: '#8a96b0' }} />
+                  <input
+                    type="text"
+                    placeholder="Search POs..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ width: '100%', padding: '10px 10px 10px 40px', background: '#192338', border: '1px solid rgba(240,165,0,.3)', borderRadius: '8px', color: 'white', fontSize: '14px' }}
+                  />
+                </div>
+                <button
+                  onClick={openAddPurchaseOrderModal}
+                  style={{ background: '#F0A500', color: '#111d33', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                >
+                  <Plus size={18} /> New Purchase Order
+                </button>
+              </div>
+
+              {purchaseOrders.length === 0 ? (
+                <div style={{ background: '#192338', border: '2px dashed rgba(240,165,0,.3)', borderRadius: '12px', padding: '60px 20px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '20px', color: '#8a96b0' }}>📦 No purchase orders yet</p>
+                  <p style={{ color: '#8a96b0', marginTop: '8px' }}>Click "New Purchase Order" to create one</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+                  {purchaseOrders.map(po => (
+                    <div key={po.id} style={{ background: '#192338', border: '1px solid rgba(240,165,0,.18)', borderRadius: '12px', padding: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <div>
+                          <p style={{ fontSize: '20px', fontWeight: '700', color: '#F0A500' }}>{po.po_no}</p>
+                          <p style={{ fontSize: '12px', color: '#8a96b0', marginTop: '4px' }}>{po.clientName}</p>
+                          <p style={{ fontSize: '12px', color: '#8a96b0', marginTop: '4px' }}>Valid until: {po.valid_until}</p>
+                          <span style={{ 
+                            display: 'inline-block', 
+                            padding: '4px 8px', 
+                            background: 'rgba(243,156,18,.15)', 
+                            color: '#f39c12', 
+                            borderRadius: '4px', 
+                            fontSize: '10px', 
+                            fontWeight: '700', 
+                            marginTop: '8px' 
+                          }}>
+                            {po.vendor_or_client}
+                          </span>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <p style={{ fontSize: '20px', fontWeight: '700', color: '#F0A500' }}>{formatCurrency(po.gross_total)}</p>
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/purchase-orders?id=${po.id}`);
+                                  const data = await res.json();
+                                  setPreviewType('purchase_order');
+                                  setCurrentPurchaseOrder(data);
+                                  setShowPreview(true);
+                                } catch (err) {
+                                  console.error(err);
+                                }
+                              }}
+                              style={{ padding: '6px', background: 'none', border: 'none', color: '#F0A500', cursor: 'pointer' }}
+                            >
+                              <Eye size={16} />
+                            </button>
+                            <button
+                              onClick={() => openEditPurchaseOrderModal(po)}
+                              style={{ padding: '6px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer' }}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() => deletePurchaseOrder(po.id)}
+                              style={{ padding: '6px', background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer' }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* UPLOAD PO VIEW */}
+          {currentPage === 'upload-po' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '20px', color: '#F0A500' }}>Uploaded Purchase Orders</h2>
+                <button
+                  onClick={() => setShowUploadPOModal(true)}
+                  style={{ background: '#F0A500', color: '#111d33', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                >
+                  <Plus size={18} /> Upload PO
+                </button>
+              </div>
+
+              {uploadedPOs.length === 0 ? (
+                <div style={{ background: '#192338', border: '2px dashed rgba(240,165,0,.3)', borderRadius: '12px', padding: '60px 20px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '20px', color: '#8a96b0' }}>📤 No uploaded POs yet</p>
+                  <p style={{ color: '#8a96b0', marginTop: '8px' }}>Click "Upload PO" to add one</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                  {uploadedPOs.map(po => (
+                    <div key={po.id} style={{ background: '#192338', border: '1px solid rgba(240,165,0,.18)', borderRadius: '12px', padding: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                          <p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={po.file_name}>{po.file_name}</p>
+                          <p style={{ fontSize: '12px', color: '#8a96b0', marginTop: '4px' }}>{po.clientName}</p>
+                          <p style={{ fontSize: '11px', color: '#8a96b0', marginTop: '4px' }}>{new Date(po.upload_date).toLocaleDateString()}</p>
+                          {po.notes && <p style={{ fontSize: '12px', color: '#ccc', marginTop: '8px', fontStyle: 'italic' }}>{po.notes}</p>}
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', flexDirection: 'column' }}>
+                          <button
+                            onClick={() => {
+                              // Create a blob and open it
+                              const byteCharacters = atob(po.file_data);
+                              const byteNumbers = new Array(byteCharacters.length);
+                              for (let i = 0; i < byteCharacters.length; i++) {
+                                byteNumbers[i] = byteCharacters.charCodeAt(i);
+                              }
+                              const byteArray = new Uint8Array(byteNumbers);
+                              const blob = new Blob([byteArray], { type: po.file_type });
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, '_blank');
+                            }}
+                            style={{ padding: '6px', background: 'none', border: 'none', color: '#F0A500', cursor: 'pointer' }}
+                            title="View File"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            onClick={() => deleteUploadedPO(po.id)}
+                            style={{ padding: '6px', background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer' }}
+                            title="Delete File"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* CLIENTS REGISTRY VIEW */}
           {currentPage === 'clients' && (
             <div>
@@ -2071,47 +2581,193 @@ const EverReadySystem = () => {
                   <p style={{ color: '#8a96b0', marginTop: '8px' }}>Click "Add Client" to register one</p>
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-                  {clients.map(client => (
-                    <div key={client.id} style={{ background: '#192338', border: '1px solid rgba(240,165,0,.18)', borderRadius: '12px', padding: '20px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
-                        <div>
-                          <h3 style={{ fontSize: '17px', fontWeight: '700', color: '#F0A500' }}>{client.name}</h3>
-                          <p style={{ fontSize: '11px', color: '#8a96b0', marginTop: '4px' }}>{client.city}, {client.pin}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: selectedClientOverview ? '340px 1fr' : '1fr', gap: '20px', alignItems: 'start' }}>
+                  {/* Client list */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {clients.map(client => (
+                      <div 
+                        key={client.id} 
+                        onClick={() => setSelectedClientOverview(selectedClientOverview?.id === client.id ? null : client)}
+                        style={{ 
+                          background: selectedClientOverview?.id === client.id ? 'rgba(240,165,0,.12)' : '#192338', 
+                          border: selectedClientOverview?.id === client.id ? '1px solid rgba(240,165,0,.5)' : '1px solid rgba(240,165,0,.18)', 
+                          borderRadius: '12px', padding: '16px', cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
+                          <div>
+                            <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>{client.name}</h3>
+                            <p style={{ fontSize: '11px', color: '#8a96b0', marginTop: '3px' }}>{client.city}, {client.pin}</p>
+                          </div>
+                          <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
+                            <button onClick={() => { setSelectedLedgerClientId(client.id); setCurrentPage('ledger'); }} title="Ledger" style={{ padding: '5px', background: 'none', border: 'none', color: '#F0A500', cursor: 'pointer' }}><FileText size={14} /></button>
+                            <button onClick={() => editClient(client)} style={{ padding: '5px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer' }}><Edit2 size={14} /></button>
+                            <button onClick={() => deleteClient(client.id)} style={{ padding: '5px', background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer' }}><Trash2 size={14} /></button>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            onClick={() => {
-                              setSelectedLedgerClientId(client.id);
-                              setCurrentPage('ledger');
-                            }}
-                            title="Statements ledger"
-                            style={{ padding: '6px', background: 'none', border: 'none', color: '#F0A500', cursor: 'pointer' }}
-                          >
-                            <FileText size={16} />
-                          </button>
-                          <button
-                            onClick={() => editClient(client)}
-                            style={{ padding: '6px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer' }}
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            onClick={() => deleteClient(client.id)}
-                            style={{ padding: '6px', background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer' }}
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                        <div style={{ fontSize: '11px', color: '#8a96b0', lineHeight: '1.7' }}>
+                          <p>📞 {client.contact_person || '—'} ({client.mobile})</p>
+                          {client.gstin && <p>🏦 {client.gstin}</p>}
                         </div>
                       </div>
-                      <div style={{ fontSize: '11px', color: '#8a96b0', lineHeight: '1.8' }}>
-                        <p>📞 Contact: {client.contact_person || '—'} ({client.mobile})</p>
-                        {client.email && <p>📧 {client.email}</p>}
-                        {client.gstin && <p>🏦 GSTIN: {client.gstin}</p>}
-                        {client.pan && <p>🪪 PAN: {client.pan}</p>}
+                    ))}
+                  </div>
+
+                  {/* Client document overview panel */}
+                  {selectedClientOverview && (() => {
+                    const cId = String(selectedClientOverview.id);
+
+                    const filterByDate = (items, dateField) => items.filter(i => {
+                      const d = i[dateField];
+                      if (clientOverviewDateFrom && d < clientOverviewDateFrom) return false;
+                      if (clientOverviewDateTo && d > clientOverviewDateTo) return false;
+                      return true;
+                    });
+
+                    const cInvoices = filterByDate(invoices.filter(i => String(i.client_id || i.clientId) === cId), 'invoice_date');
+                    const cQuotations = filterByDate(quotations.filter(q => String(q.client_id || q.clientId) === cId), 'quotation_date');
+                    const cPOs = filterByDate(purchaseOrders.filter(p => String(p.client_id || p.clientId) === cId), 'po_date');
+                    const cUploads = uploadedPOs.filter(u => String(u.client_id || u.clientId) === cId);
+
+                    const tabs = [
+                      { key: 'invoices', label: '🧾 Invoices', items: cInvoices, color: '#3498db' },
+                      { key: 'quotations', label: '📋 Quotations', items: cQuotations, color: '#f39c12' },
+                      { key: 'pos', label: '📦 POs', items: cPOs, color: '#27ae60' },
+                      { key: 'uploads', label: '📤 Uploads', items: cUploads, color: '#9b59b6' },
+                    ];
+
+                    const activeTab = tabs.find(t => t.key === clientOverviewTab) || tabs[0];
+                    const totalPages = Math.max(1, Math.ceil(activeTab.items.length / CLIENT_OVERVIEW_PAGE_SIZE));
+                    const safePage = Math.min(clientOverviewPage, totalPages);
+                    const pagedItems = activeTab.items.slice((safePage - 1) * CLIENT_OVERVIEW_PAGE_SIZE, safePage * CLIENT_OVERVIEW_PAGE_SIZE);
+
+                    const handleTabChange = (key) => { setClientOverviewTab(key); setClientOverviewPage(1); };
+                    const handleDateChange = () => setClientOverviewPage(1);
+
+                    return (
+                      <div style={{ background: '#192338', border: '1px solid rgba(240,165,0,.2)', borderRadius: '12px', padding: '20px', maxHeight: '85vh', overflowY: 'auto' }}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}>
+                          <div>
+                            <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#F0A500' }}>{selectedClientOverview.name}</h2>
+                            <p style={{ fontSize: '11px', color: '#8a96b0', marginTop: '3px' }}>{selectedClientOverview.address}, {selectedClientOverview.city}</p>
+                            {selectedClientOverview.mobile && <p style={{ fontSize: '11px', color: '#8a96b0' }}>📞 {selectedClientOverview.mobile}</p>}
+                          </div>
+                          <button onClick={() => setSelectedClientOverview(null)} style={{ background: 'none', border: 'none', color: '#8a96b0', cursor: 'pointer', fontSize: '18px' }}>✕</button>
+                        </div>
+
+                        {/* Stats bar */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '16px' }}>
+                          {tabs.map(t => (
+                            <div key={t.key} onClick={() => handleTabChange(t.key)} style={{ background: '#0e1829', borderRadius: '8px', padding: '10px', textAlign: 'center', cursor: 'pointer', border: clientOverviewTab === t.key ? `1px solid ${t.color}` : '1px solid transparent', transition: 'border 0.2s' }}>
+                              <p style={{ fontSize: '20px', fontWeight: '700', color: t.color }}>{t.items.length}</p>
+                              <p style={{ fontSize: '10px', color: '#8a96b0' }}>{t.label.split(' ').slice(1).join(' ')}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Date filter (hidden for uploads tab) */}
+                        {clientOverviewTab !== 'uploads' && (
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', color: '#8a96b0', whiteSpace: 'nowrap' }}>📅 Filter:</span>
+                            <input type="date" value={clientOverviewDateFrom} onChange={e => { setClientOverviewDateFrom(e.target.value); handleDateChange(); }}
+                              style={{ flex: 1, padding: '6px 8px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '6px', color: 'white', fontSize: '12px' }} />
+                            <span style={{ color: '#8a96b0', fontSize: '11px' }}>to</span>
+                            <input type="date" value={clientOverviewDateTo} onChange={e => { setClientOverviewDateTo(e.target.value); handleDateChange(); }}
+                              style={{ flex: 1, padding: '6px 8px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '6px', color: 'white', fontSize: '12px' }} />
+                            {(clientOverviewDateFrom || clientOverviewDateTo) && (
+                              <button onClick={() => { setClientOverviewDateFrom(''); setClientOverviewDateTo(''); setClientOverviewPage(1); }} style={{ padding: '6px 8px', background: 'rgba(231,76,60,.15)', border: '1px solid rgba(231,76,60,.3)', color: '#e74c3c', borderRadius: '6px', cursor: 'pointer', fontSize: '11px' }}>Clear</button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Tab label */}
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: activeTab.color, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+                          {activeTab.label} — {activeTab.items.length} record{activeTab.items.length !== 1 ? 's' : ''}
+                        </div>
+
+                        {/* Document rows */}
+                        {pagedItems.length === 0 ? (
+                          <p style={{ color: '#8a96b0', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>No records found.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {pagedItems.map(item => {
+                              const isInvoice = clientOverviewTab === 'invoices';
+                              const isQuotation = clientOverviewTab === 'quotations';
+                              const isPO = clientOverviewTab === 'pos';
+                              const isUpload = clientOverviewTab === 'uploads';
+
+                              const docNo = item.invoice_no || item.quotation_no || item.po_no || item.file_name;
+                              const docDate = item.invoice_date || item.quotation_date || item.po_date || item.upload_date;
+                              const docAmount = item.gross_total;
+
+                              return (
+                                <div
+                                  key={item.id}
+                                  onClick={() => {
+                                    if (isInvoice) { viewInvoiceDetail(item.id); }
+                                    else if (isQuotation) setCurrentPage('quotations');
+                                    else if (isPO) setCurrentPage('purchase-orders');
+                                  }}
+                                  style={{
+                                    background: '#0e1829', borderRadius: '8px', padding: '10px 14px',
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    cursor: isUpload ? 'default' : 'pointer',
+                                    border: '1px solid transparent',
+                                    transition: 'border 0.15s, background 0.15s'
+                                  }}
+                                  onMouseEnter={e => { if (!isUpload) { e.currentTarget.style.border = `1px solid ${activeTab.color}40`; e.currentTarget.style.background = '#132030'; } }}
+                                  onMouseLeave={e => { e.currentTarget.style.border = '1px solid transparent'; e.currentTarget.style.background = '#0e1829'; }}
+                                >
+                                  <div style={{ overflow: 'hidden' }}>
+                                    <span style={{ fontWeight: 'bold', color: '#F0A500', fontSize: '13px' }}>{docNo}</span>
+                                    <span style={{ color: '#8a96b0', fontSize: '11px', marginLeft: '10px' }}>{docDate}</span>
+                                    {isPO && item.vendor_or_client && (
+                                      <span style={{ color: '#8a96b0', fontSize: '10px', marginLeft: '6px', background: 'rgba(240,165,0,.1)', padding: '2px 5px', borderRadius: '4px' }}>{item.vendor_or_client}</span>
+                                    )}
+                                    {isInvoice && (
+                                      <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 'bold', color: item.payment_status === 'PAID' ? '#27ae60' : item.payment_status === 'PARTIAL' ? '#f39c12' : '#e74c3c', background: item.payment_status === 'PAID' ? 'rgba(39,174,96,.1)' : 'rgba(231,76,60,.1)', padding: '2px 6px', borderRadius: '4px' }}>{item.payment_status || 'UNPAID'}</span>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                    {docAmount !== undefined && (
+                                      <span style={{ fontWeight: 'bold', color: activeTab.color, fontSize: '13px' }}>{formatCurrency(docAmount)}</span>
+                                    )}
+                                    {isUpload && (
+                                      <button
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          const bytes = atob(item.file_data);
+                                          const arr = new Uint8Array(bytes.length);
+                                          for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+                                          window.open(URL.createObjectURL(new Blob([arr], { type: item.file_type })), '_blank');
+                                        }}
+                                        style={{ padding: '3px 8px', background: 'rgba(155,89,182,.15)', border: '1px solid rgba(155,89,182,.3)', color: '#9b59b6', borderRadius: '5px', cursor: 'pointer', fontSize: '11px' }}
+                                      >View</button>
+                                    )}
+                                    {!isUpload && <span style={{ color: '#8a96b0', fontSize: '12px' }}>→</span>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Pagination */}
+                        {totalPages > 1 && (
+                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '14px' }}>
+                            <button onClick={() => setClientOverviewPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                              style={{ padding: '5px 12px', background: safePage === 1 ? '#0e1829' : '#192338', border: '1px solid rgba(138,150,176,.25)', color: safePage === 1 ? '#4a5568' : 'white', borderRadius: '6px', cursor: safePage === 1 ? 'not-allowed' : 'pointer', fontSize: '12px' }}>← Prev</button>
+                            <span style={{ fontSize: '12px', color: '#8a96b0' }}>Page {safePage} of {totalPages}</span>
+                            <button onClick={() => setClientOverviewPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                              style={{ padding: '5px 12px', background: safePage === totalPages ? '#0e1829' : '#192338', border: '1px solid rgba(138,150,176,.25)', color: safePage === totalPages ? '#4a5568' : 'white', borderRadius: '6px', cursor: safePage === totalPages ? 'not-allowed' : 'pointer', fontSize: '12px' }}>Next →</button>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })()}
+
                 </div>
               )}
             </div>
@@ -2479,6 +3135,72 @@ const EverReadySystem = () => {
                   💾 Save Settings
                 </button>
               </div>
+
+              {/* Password Update Form */}
+              <div style={{ background: '#192338', border: '1px solid rgba(240,165,0,.18)', borderRadius: '12px', padding: '24px', marginTop: '24px' }}>
+                <h3 style={{ fontSize: '17px', fontWeight: '700', color: '#F0A500', marginBottom: '16px' }}>🔒 Update Password</h3>
+                <form 
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const currentPassword = e.target.currentPassword.value;
+                    const newPassword = e.target.newPassword.value;
+                    const confirmPassword = e.target.confirmPassword.value;
+
+                    if (newPassword !== confirmPassword) {
+                      showToast('New passwords do not match', 'error');
+                      return;
+                    }
+
+                    try {
+                      const res = await fetch('/api/auth', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ currentPassword, newPassword })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        showToast('Password updated successfully', 'success');
+                        e.target.reset();
+                      } else {
+                        showToast(data.message || 'Error updating password', 'error');
+                      }
+                    } catch (err) {
+                      showToast('Server error', 'error');
+                    }
+                  }}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+                >
+                  <div>
+                    <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Current Password *</label>
+                    <input name="currentPassword" type="password" required style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>New Password *</label>
+                    <input name="newPassword" type="password" required style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Confirm New Password *</label>
+                    <input name="confirmPassword" type="password" required style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px' }} />
+                  </div>
+                  <button
+                    type="submit"
+                    style={{
+                      marginTop: '8px',
+                      padding: '10px 24px',
+                      background: '#e74c3c',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      alignSelf: 'flex-start'
+                    }}
+                  >
+                    Update Password
+                  </button>
+                </form>
+              </div>
+
             </div>
           )}
         </div>
@@ -2486,7 +3208,7 @@ const EverReadySystem = () => {
 
       {/* NOTIFICATIONS DRAWER */}
       {showNotifications && (
-        <div style={{ position: 'fixed', right: 0, top: 70, width: '350px', height: 'calc(100vh - 70px)', background: '#0e1829', borderLeft: '1px solid rgba(240,165,0,.18)', zIndex: 300, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="no-print" style={{ position: 'fixed', right: 0, top: 70, width: '350px', height: 'calc(100vh - 70px)', background: '#0e1829', borderLeft: '1px solid rgba(240,165,0,.18)', zIndex: 300, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(240,165,0,.18)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>🔔 Notifications</h3>
             <button onClick={() => setShowNotifications(false)} style={{ background: 'none', border: 'none', color: '#8a96b0', cursor: 'pointer', fontSize: '18px' }}>✕</button>
@@ -2529,7 +3251,7 @@ const EverReadySystem = () => {
 
       {/* WHATSAPP REMINDER TEXTS PREVIEW MODAL */}
       {showReminderModal && reminderInvoice && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '600px', padding: '32px', position: 'relative' }}>
             <button onClick={() => setShowReminderModal(false)} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
             <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#F0A500', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}><Share2 size={20} /> WhatsApp Reminder dispatch</h2>
@@ -2593,7 +3315,7 @@ const EverReadySystem = () => {
 
       {/* COLLECT PAYMENT MODAL */}
       {showPaymentModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '500px', padding: '32px', position: 'relative' }}>
             <button onClick={() => setShowPaymentModal(false)} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
             <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#F0A500', marginBottom: '24px' }}>
@@ -2640,7 +3362,7 @@ const EverReadySystem = () => {
 
       {/* CREATE INVOICE MODAL */}
       {showInvoiceModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', padding: '32px', position: 'relative' }}>
             <button onClick={closeInvoiceModal} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
             
@@ -2843,7 +3565,7 @@ const EverReadySystem = () => {
 
       {/* CREATE QUOTATION MODAL */}
       {showQuotationModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', padding: '32px', position: 'relative' }}>
             <button onClick={closeQuotationModal} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
             
@@ -2987,7 +3709,7 @@ const EverReadySystem = () => {
 
       {/* CREATE/EDIT CLIENT MODAL */}
       {showClientModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '700px', padding: '32px', position: 'relative' }}>
             <button onClick={closeClientModal} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
             
@@ -3044,6 +3766,300 @@ const EverReadySystem = () => {
         </div>
       )}
 
+      {/* PURCHASE ORDER MODAL */}
+      {showPurchaseOrderModal && (
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
+          <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '950px', maxHeight: '90vh', overflowY: 'auto', padding: '32px', position: 'relative' }}>
+            <button onClick={closePurchaseOrderModal} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
+            
+            <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#F0A500', marginBottom: '24px' }}>{editingPurchaseOrderId ? '📝 Edit Purchase Order' : '📦 Create New Purchase Order'}</h2>
+
+            {/* Basic Info - 5 columns: Type | Company | PO No | PO Date | Valid Until */}
+            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 160px 160px 160px', gap: '16px', marginBottom: '24px' }}>
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Type</label>
+                <select 
+                  value={currentPurchaseOrder.vendor_or_client} 
+                  onChange={(e) => setCurrentPurchaseOrder({ ...currentPurchaseOrder, vendor_or_client: e.target.value })} 
+                  style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
+                >
+                  <option value="CLIENT">Client</option>
+                  <option value="VENDOR">Vendor</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Company *</label>
+                <select 
+                  value={currentPurchaseOrder.clientId} 
+                  onChange={(e) => setCurrentPurchaseOrder({ ...currentPurchaseOrder, clientId: e.target.value })} 
+                  style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
+                >
+                  <option value="">Select Company</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>PO No. *</label>
+                <input type="text" value={currentPurchaseOrder.poNo} onChange={(e) => setCurrentPurchaseOrder({ ...currentPurchaseOrder, poNo: e.target.value })} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>PO Date *</label>
+                <input type="date" value={currentPurchaseOrder.poDate} onChange={(e) => setCurrentPurchaseOrder({ ...currentPurchaseOrder, poDate: e.target.value })} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Valid Until</label>
+                <input type="date" value={currentPurchaseOrder.validUntil} onChange={(e) => setCurrentPurchaseOrder({ ...currentPurchaseOrder, validUntil: e.target.value })} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
+              </div>
+            </div>
+
+            {/* Items */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'white' }}>Item Details</h3>
+                <button onClick={addPurchaseOrderItem} style={{ background: '#27ae60', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>+ Add Row</button>
+              </div>
+              <div style={{ background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '8px', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(255,255,255,.05)', borderBottom: '1px solid rgba(138,150,176,.2)' }}>
+                      <th style={{ padding: '10px', width: '40px', textAlign: 'center' }}>#</th>
+                      <th style={{ padding: '10px' }}>Description *</th>
+                      <th style={{ padding: '10px', width: '100px' }}>HSN</th>
+                      <th style={{ padding: '10px', width: '80px', textAlign: 'center' }}>Qty *</th>
+                      <th style={{ padding: '10px', width: '120px', textAlign: 'right' }}>Rate (₹) *</th>
+                      <th style={{ padding: '10px', width: '120px', textAlign: 'right' }}>Total (₹)</th>
+                      <th style={{ padding: '10px', width: '40px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentPurchaseOrder.items.map((item, index) => (
+                      <tr key={index} style={{ borderBottom: index < currentPurchaseOrder.items.length - 1 ? '1px solid rgba(138,150,176,.1)' : 'none' }}>
+                        <td style={{ padding: '10px', textAlign: 'center', color: '#8a96b0' }}>{item.sr}</td>
+                        <td style={{ padding: '6px' }}>
+                          <textarea rows="2" value={item.desc} onChange={(e) => {
+                            const newItems = [...currentPurchaseOrder.items];
+                            newItems[index].desc = e.target.value;
+                            setCurrentPurchaseOrder({ ...currentPurchaseOrder, items: newItems });
+                          }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px', resize: 'vertical' }} placeholder="Material/Service detail..." />
+                        </td>
+                        <td style={{ padding: '6px' }}>
+                          <input type="text" value={item.hsn} onChange={(e) => {
+                            const newItems = [...currentPurchaseOrder.items];
+                            newItems[index].hsn = e.target.value;
+                            setCurrentPurchaseOrder({ ...currentPurchaseOrder, items: newItems });
+                          }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px' }} />
+                        </td>
+                        <td style={{ padding: '6px' }}>
+                          <input type="number" min="1" value={item.qty} onChange={(e) => {
+                            const newItems = [...currentPurchaseOrder.items];
+                            newItems[index].qty = parseFloat(e.target.value) || 0;
+                            newItems[index].total = newItems[index].qty * newItems[index].rate;
+                            const totals = calculateTotals(newItems, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
+                            setCurrentPurchaseOrder({ ...currentPurchaseOrder, items: newItems, ...totals });
+                          }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px', textAlign: 'center' }} />
+                        </td>
+                        <td style={{ padding: '6px' }}>
+                          <input type="number" min="0" value={item.rate} onChange={(e) => {
+                            const newItems = [...currentPurchaseOrder.items];
+                            newItems[index].rate = parseFloat(e.target.value) || 0;
+                            newItems[index].total = newItems[index].qty * newItems[index].rate;
+                            const totals = calculateTotals(newItems, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
+                            setCurrentPurchaseOrder({ ...currentPurchaseOrder, items: newItems, ...totals });
+                          }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px', textAlign: 'right' }} />
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold' }}>{item.total.toFixed(2)}</td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          {currentPurchaseOrder.items.length > 1 && (
+                            <button onClick={() => removePurchaseOrderItem(index)} style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '4px' }}>✕</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Calculations */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '24px', background: '#0e1829', padding: '20px', borderRadius: '12px' }}>
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Tax Configuration</label>
+                <select
+                  value={currentPurchaseOrder.taxType}
+                  onChange={(e) => {
+                    const taxType = e.target.value;
+                    const totals = calculateTotals(currentPurchaseOrder.items, taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
+                    setCurrentPurchaseOrder({ ...currentPurchaseOrder, taxType, ...totals });
+                  }}
+                  style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
+                >
+                  <option value="CGST_SGST">CGST + SGST</option>
+                  <option value="IGST">IGST Only</option>
+                  <option value="NONE">No GST</option>
+                </select>
+              </div>
+              {currentPurchaseOrder.taxType === 'CGST_SGST' && (
+                <>
+                  <div>
+                    <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>CGST Rate (%)</label>
+                    <input type="number" min="0" value={currentPurchaseOrder.cgstRate} onChange={(e) => {
+                      const cgstRate = parseFloat(e.target.value) || 0;
+                      const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
+                      setCurrentPurchaseOrder({ ...currentPurchaseOrder, cgstRate, ...totals });
+                    }} style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>SGST Rate (%)</label>
+                    <input type="number" min="0" value={currentPurchaseOrder.sgstRate} onChange={(e) => {
+                      const sgstRate = parseFloat(e.target.value) || 0;
+                      const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
+                      setCurrentPurchaseOrder({ ...currentPurchaseOrder, sgstRate, ...totals });
+                    }} style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
+                  </div>
+                </>
+              )}
+              {currentPurchaseOrder.taxType === 'IGST' && (
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>IGST Rate (%)</label>
+                  <input type="number" min="0" value={currentPurchaseOrder.igstRate} onChange={(e) => {
+                    const igstRate = parseFloat(e.target.value) || 0;
+                    const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
+                    setCurrentPurchaseOrder({ ...currentPurchaseOrder, igstRate, ...totals });
+                  }} style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
+                </div>
+              )}
+              {currentPurchaseOrder.taxType === 'NONE' && <div style={{ gridColumn: 'span 2' }}></div>}
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Discount (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={currentPurchaseOrder.discount}
+                  onChange={(e) => {
+                    const discount = parseFloat(e.target.value) || 0;
+                    const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, discount, currentPurchaseOrder.transportCharges);
+                    setCurrentPurchaseOrder({ ...currentPurchaseOrder, discount, ...totals });
+                  }}
+                  style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(231,76,60,.4)', borderRadius: '8px', color: '#e74c3c', fontSize: '13px', fontWeight: 'bold' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Transport Charges (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={currentPurchaseOrder.transportCharges}
+                  onChange={(e) => {
+                    const transportCharges = parseFloat(e.target.value) || 0;
+                    const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, transportCharges);
+                    setCurrentPurchaseOrder({ ...currentPurchaseOrder, transportCharges, ...totals });
+                  }}
+                  style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(39,174,96,.4)', borderRadius: '8px', color: '#27ae60', fontSize: '13px', fontWeight: 'bold' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(240,165,0,.06)', border: '1px solid rgba(240,165,0,.2)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr', gap: '12px' }}>
+                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>SUBTOTAL</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{(currentPurchaseOrder.subtotal || 0).toFixed(2)}</p></div>
+                <div><p style={{ fontSize: '10px', color: '#e74c3c', margin: '0' }}>DISCOUNT</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#e74c3c' }}>-₹{(currentPurchaseOrder.discount || 0).toFixed(2)}</p></div>
+                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>CGST</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{(currentPurchaseOrder.cgstAmount || 0).toFixed(2)}</p></div>
+                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>SGST</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{(currentPurchaseOrder.sgstAmount || 0).toFixed(2)}</p></div>
+                <div><p style={{ fontSize: '10px', color: '#27ae60', margin: '0' }}>TRANSPORT</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#27ae60' }}>+₹{(currentPurchaseOrder.transportCharges || 0).toFixed(2)}</p></div>
+                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>GRAND TOTAL</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{(currentPurchaseOrder.grossTotal || 0).toFixed(2)}</p></div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid rgba(240,165,0,.2)', paddingTop: '16px' }}>
+              <button onClick={closePurchaseOrderModal} style={{ padding: '10px 20px', background: 'transparent', border: '1px solid rgba(240,165,0,.3)', color: '#8a96b0', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Cancel</button>
+              <button onClick={() => { setPreviewType('purchase_order'); setShowPreview(true); }} style={{ padding: '10px 20px', background: 'rgba(240,165,0,.2)', border: '1px solid rgba(240,165,0,.3)', color: '#F0A500', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>👁 Preview</button>
+              <button onClick={savePurchaseOrder} style={{ padding: '10px 20px', background: '#F0A500', color: '#111d33', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '700' }}>✅ Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* UPLOAD PO MODAL */}
+      {showUploadPOModal && (
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
+          <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '500px', padding: '32px', position: 'relative' }}>
+            <button onClick={() => setShowUploadPOModal(false)} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
+            
+            <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#F0A500', marginBottom: '24px' }}>📤 Upload Purchase Order</h2>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              await saveUploadedPO();
+            }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Vendor / Client *</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select 
+                    value={currentUploadedPO.vendor_or_client} 
+                    onChange={(e) => setCurrentUploadedPO({ ...currentUploadedPO, vendor_or_client: e.target.value })} 
+                    style={{ padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
+                  >
+                    <option value="CLIENT">Client</option>
+                    <option value="VENDOR">Vendor</option>
+                  </select>
+                  <select 
+                    value={currentUploadedPO.clientId} 
+                    onChange={(e) => setCurrentUploadedPO({ ...currentUploadedPO, clientId: e.target.value })} 
+                    style={{ flex: 1, padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
+                    required
+                  >
+                    <option value="">Select Company</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Select File (PDF or Image) *</label>
+                <input 
+                  type="file" 
+                  accept="application/pdf, image/*"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const base64String = event.target.result.split(',')[1];
+                        setCurrentUploadedPO({
+                          ...currentUploadedPO,
+                          fileName: file.name,
+                          fileType: file.type,
+                          fileData: base64String
+                        });
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }} 
+                  style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Notes</label>
+                <textarea 
+                  value={currentUploadedPO.notes}
+                  onChange={(e) => setCurrentUploadedPO({ ...currentUploadedPO, notes: e.target.value })}
+                  style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px', resize: 'vertical' }}
+                  rows="3"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid rgba(240,165,0,.2)', paddingTop: '16px', marginTop: '8px' }}>
+                <button type="button" onClick={() => setShowUploadPOModal(false)} style={{ padding: '10px 20px', background: 'transparent', border: '1px solid rgba(240,165,0,.3)', color: '#8a96b0', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Cancel</button>
+                <button type="submit" style={{ padding: '10px 20px', background: '#F0A500', color: '#111d33', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '700' }}>📤 Upload File</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* PRINT/PREVIEW INTERACTIVE POPUP */}
       {showPreview && (
         <div className="print-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
@@ -3056,7 +4072,10 @@ const EverReadySystem = () => {
               </div>
               <button onClick={() => setShowPreview(false)} style={{ background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
             </div>
-            <DocumentPreview type={previewType} data={previewType === 'invoice' ? currentInvoice : currentQuotation} />
+            <DocumentPreview 
+              type={previewType} 
+              data={previewType === 'invoice' ? currentInvoice : previewType === 'quotation' ? currentQuotation : currentPurchaseOrder} 
+            />
           </div>
         </div>
       )}
