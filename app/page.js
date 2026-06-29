@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Plus, Trash2, Eye, Bell, X, Download, Send, Edit2, 
-  Search, Filter, RefreshCw, MessageSquare, Calendar, 
+import {
+  Plus, Trash2, Eye, Bell, X, Download, Send, Edit2,
+  Search, Filter, RefreshCw, MessageSquare, Calendar,
   CreditCard, Landmark, CheckCircle, FileSpreadsheet, Share2, Printer, ChevronRight, FileText, Upload
 } from 'lucide-react';
 import { exportToExcel, exportInvoicePDF, exportReceiptPDF, exportLedgerPDF, numberToWords } from '@/lib/exporter';
@@ -76,7 +76,7 @@ const EverReadySystem = () => {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  
+
 
   // Detail Invoice selection
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
@@ -479,14 +479,14 @@ const EverReadySystem = () => {
   // ═══════════════════════════════════════════════════════════════════
   const generateLedger = async (clientId) => {
     if (!clientId) return;
-    
+
     try {
       // Find invoices of the client
       const clientInvoices = invoices.filter(inv => inv.client_id == clientId);
       // Fetch client payments
       const pRes = await fetch(`/api/payments`);
       const allPayments = await pRes.json();
-      
+
       if (allPayments.error || !Array.isArray(allPayments)) {
         showToast('Error loading ledger details: ' + (allPayments.error || 'Invalid API response'), 'error');
         setLedgerEntries([]);
@@ -557,7 +557,7 @@ const EverReadySystem = () => {
     try {
       const res = await fetch(`/api/invoices?id=${id}`);
       const data = await res.json();
-      
+
       if (data.error) {
         showToast('Error loading invoice details: ' + data.error, 'error');
         setLoading(false);
@@ -646,7 +646,7 @@ const EverReadySystem = () => {
     const discountRatio = subtotal > 0 ? (subtotal - discountVal) / subtotal : 1;
     const itemSubtotal = item.qty * item.rate;
     const taxableSubtotal = itemSubtotal * discountRatio;
-    
+
     let taxRate = 0;
     if (taxType === 'CGST_SGST') {
       const cgst = item.cgstRate !== undefined ? parseFloat(item.cgstRate) : 9;
@@ -655,7 +655,7 @@ const EverReadySystem = () => {
     } else if (taxType === 'IGST') {
       taxRate = parseFloat(igstRate) || 18;
     }
-    
+
     return parseFloat((taxableSubtotal * (taxRate / 100)).toFixed(2));
   };
 
@@ -718,7 +718,7 @@ const EverReadySystem = () => {
         showToast('Error loading invoice: ' + data.error, 'error');
         return;
       }
-      
+
       setCurrentInvoice({
         invoiceNo: data.invoiceNo || data.invoice_no,
         invoiceDate: data.invoiceDate || data.invoice_date,
@@ -750,7 +750,7 @@ const EverReadySystem = () => {
         total_paid: data.total_paid || 0,
         remaining_amount: data.remaining_amount !== undefined ? data.remaining_amount : (data.grossTotal || data.gross_total || 0)
       });
-      
+
       setEditingInvoiceId(inv.id);
       setShowInvoiceModal(true);
     } catch (err) {
@@ -761,11 +761,11 @@ const EverReadySystem = () => {
 
   const saveInvoice = async () => {
     if (!currentInvoice.clientId) { showToast('Please select a client', 'warning'); return; }
-    
+
     try {
       const url = '/api/invoices';
       const method = editingInvoiceId ? 'PUT' : 'POST';
-      
+
       let invoiceData = { ...currentInvoice };
       if (!editingInvoiceId && currentInvoice.recordPayment) {
         invoiceData.initialPayment = {
@@ -776,7 +776,7 @@ const EverReadySystem = () => {
           notes: 'Initial payment recorded during invoice generation'
         };
       }
-      
+
       const body = editingInvoiceId ? { id: editingInvoiceId, ...currentInvoice } : invoiceData;
 
       const res = await fetch(url, {
@@ -789,12 +789,12 @@ const EverReadySystem = () => {
         showToast('Error saving invoice: ' + data.error, 'error');
         return;
       }
-      
+
       closeInvoiceModal();
       await fetchInvoices();
       await fetchNotifications();
       showToast(editingInvoiceId ? 'Invoice updated!' : 'Invoice created successfully!', 'success');
-      
+
       // If we are currently in invoice detail view, refresh detail view
       if (selectedInvoiceId && editingInvoiceId === selectedInvoiceId) {
         viewInvoiceDetail(selectedInvoiceId);
@@ -1046,7 +1046,7 @@ const EverReadySystem = () => {
       await fetchInvoices();
       await fetchNotifications();
       showToast(editingPaymentId ? 'Payment updated' : 'Payment registered successfully', 'success');
-      
+
       if (selectedInvoiceId) {
         viewInvoiceDetail(selectedInvoiceId);
       }
@@ -1139,7 +1139,7 @@ const EverReadySystem = () => {
         showToast('Error loading quotation: ' + data.error, 'error');
         return;
       }
-      
+
       setCurrentQuotation({
         quotationNo: data.quotationNo || data.quotation_no,
         quotationDate: data.quotationDate || data.quotation_date,
@@ -1169,7 +1169,7 @@ const EverReadySystem = () => {
         grossTotal: data.grossTotal || data.gross_total,
         status: data.status || 'PENDING'
       });
-      
+
       setEditingQuotationId(quot.id);
       setShowQuotationModal(true);
     } catch (err) {
@@ -1180,7 +1180,7 @@ const EverReadySystem = () => {
 
   const saveQuotation = async () => {
     if (!currentQuotation.clientId) { showToast('Please select a client', 'warning'); return; }
-    
+
     try {
       const url = '/api/quotations';
       const method = editingQuotationId ? 'PUT' : 'POST';
@@ -1196,7 +1196,7 @@ const EverReadySystem = () => {
         showToast('Error saving quotation: ' + data.error, 'error');
         return;
       }
-      
+
       closeQuotationModal();
       await fetchQuotations();
       await fetchNotifications();
@@ -1265,7 +1265,7 @@ const EverReadySystem = () => {
       showToast('Please fill in all required fields marked with *', 'warning');
       return;
     }
-    
+
     try {
       const url = '/api/clients';
       const method = editingClientId ? 'PUT' : 'POST';
@@ -1281,7 +1281,7 @@ const EverReadySystem = () => {
         showToast('Error saving client: ' + data.error, 'error');
         return;
       }
-      
+
       closeClientModal();
       await fetchClients();
       showToast(editingClientId ? 'Client records updated!' : 'Client registered successfully!', 'success');
@@ -1620,7 +1620,7 @@ const EverReadySystem = () => {
     const invNo = reminderInvoice.invoiceNo || reminderInvoice.invoice_no;
     const grossTotal = formatCurrency(reminderInvoice.grossTotal || reminderInvoice.gross_total);
     const outstanding = formatCurrency(reminderInvoice.remaining_amount);
-    
+
     if (reminderTemplate === 'created') {
       return `Dear customer, Invoice ${invNo} of amount ${grossTotal} has been generated by ${company.name}. You can review the invoice details on your statement. Thank you.`;
     }
@@ -1656,7 +1656,7 @@ const EverReadySystem = () => {
     let docTitle = 'INVOICE';
     if (type === 'quotation') docTitle = 'QUOTATION';
     if (type === 'purchase_order') docTitle = 'PURCHASE ORDER';
-    
+
     let docNumber = data.invoiceNo || data.invoice_no;
     if (type === 'quotation') docNumber = data.quotationNo || data.quotation_no;
     if (type === 'purchase_order') docNumber = data.poNo || data.po_no;
@@ -1791,7 +1791,7 @@ const EverReadySystem = () => {
                 <span>Taxable Amount</span><span>₹{(Math.max(0, (data.subtotal || 0) - (data.discount || 0))).toFixed(2)}</span>
               </div>
             )}
-             {((data.cgstAmount || 0) + (data.sgstAmount || 0) + (data.igstAmount || 0)) > 0 && (
+            {((data.cgstAmount || 0) + (data.sgstAmount || 0) + (data.igstAmount || 0)) > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #ddd' }}>
                 <span>Total Tax Amount</span><span>₹{((data.cgstAmount || 0) + (data.sgstAmount || 0) + (data.igstAmount || 0)).toFixed(2)}</span>
               </div>
@@ -1833,7 +1833,7 @@ const EverReadySystem = () => {
               <p>_____________________</p>
             </div>
           </div>
-          
+
           {/* Right Column: Authorized Signatory Stamp */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', fontSize: '10.5px', textAlign: 'center', alignSelf: 'end' }}>
             <p style={{ marginBottom: '10px', fontWeight: 'bold' }}>For {company.name}</p>
@@ -1858,7 +1858,7 @@ const EverReadySystem = () => {
   const filteredInvoices = invoices.filter(inv => {
     // 1. Search Query
     const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       (inv.invoice_no || '').toLowerCase().includes(searchLower) ||
       (inv.clientName || '').toLowerCase().includes(searchLower) ||
       (inv.po_no || '').toLowerCase().includes(searchLower);
@@ -1881,7 +1881,7 @@ const EverReadySystem = () => {
 
   const filteredQuotations = quotations.filter(quot => {
     const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       (quot.quotation_no || '').toLowerCase().includes(searchLower) ||
       (quot.clientName || '').toLowerCase().includes(searchLower);
 
@@ -1911,21 +1911,21 @@ const EverReadySystem = () => {
           <h2 style={{ margin: '20px 0', fontSize: '24px', fontWeight: 'bold' }}>System Login</h2>
           {loginError && <div style={{ background: '#c0392b', color: 'white', padding: '10px', borderRadius: '8px', marginBottom: '20px', fontSize: '13px' }}>{loginError}</div>}
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <input 
-              type="text" 
-              placeholder="Username" 
-              value={loginUsername} 
-              onChange={e => setLoginUsername(e.target.value)} 
-              required 
-              style={{ padding: '12px', borderRadius: '8px', border: '1px solid rgba(240,165,0,.3)', background: '#111d33', color: 'white' }} 
+            <input
+              type="text"
+              placeholder="Username"
+              value={loginUsername}
+              onChange={e => setLoginUsername(e.target.value)}
+              required
+              style={{ padding: '12px', borderRadius: '8px', border: '1px solid rgba(240,165,0,.3)', background: '#111d33', color: 'white' }}
             />
-            <input 
-              type="password" 
-              placeholder="Password" 
-              value={loginPassword} 
-              onChange={e => setLoginPassword(e.target.value)} 
-              required 
-              style={{ padding: '12px', borderRadius: '8px', border: '1px solid rgba(240,165,0,.3)', background: '#111d33', color: 'white' }} 
+            <input
+              type="password"
+              placeholder="Password"
+              value={loginPassword}
+              onChange={e => setLoginPassword(e.target.value)}
+              required
+              style={{ padding: '12px', borderRadius: '8px', border: '1px solid rgba(240,165,0,.3)', background: '#111d33', color: 'white' }}
             />
             <button type="submit" style={{ background: '#F0A500', color: '#111d33', padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px', marginTop: '10px' }}>
               Login
@@ -1938,7 +1938,7 @@ const EverReadySystem = () => {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#111d33', color: 'white', fontFamily: "'Exo 2', sans-serif" }}>
-      
+
       {/* TOAST SYSTEM */}
       <div className="no-print" style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {toasts.map(toast => (
@@ -1991,7 +1991,7 @@ const EverReadySystem = () => {
           ))}
         </nav>
         <div style={{ borderTop: '1px solid rgba(240,165,0,.18)', paddingTop: '16px', fontSize: '11px', textAlign: 'center' }}>
-          <button 
+          <button
             onClick={handleLogout}
             style={{
               width: '100%', padding: '10px', background: 'transparent', border: '1px solid #c0392b', color: '#e74c3c', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', marginBottom: '16px', transition: 'all 0.2s'
@@ -2006,7 +2006,7 @@ const EverReadySystem = () => {
 
       {/* MAIN CONTENT */}
       <main style={{ marginLeft: '250px', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        
+
         {/* TOPBAR */}
         <header className="no-print" style={{ height: '70px', background: 'linear-gradient(90deg, #111d33 0%, #152035 100%)', borderBottom: '1px solid rgba(240,165,0,.18)', display: 'flex', alignItems: 'center', padding: '0 32px', gap: '20px', position: 'sticky', top: 0, zIndex: 90 }}>
           <h1 style={{ flex: 1, fontSize: '24px', fontWeight: '700', letterSpacing: '1px' }}>
@@ -2021,7 +2021,7 @@ const EverReadySystem = () => {
             {currentPage === 'reports' && '📊 Reports & GST Breakdowns'}
             {currentPage === 'settings' && '⚙️ Profile Settings'}
           </h1>
-          
+
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             style={{
@@ -2059,28 +2059,30 @@ const EverReadySystem = () => {
 
           {currentPage === 'invoices' && (
             <button
-              onClick={() => { setCurrentInvoice({
-                invoiceNo: `INV-${invoices.length + 101}`,
-                invoiceDate: new Date().toISOString().split('T')[0],
-                clientId: '',
-                poNo: '',
-                poDate: '',
-                items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
-                taxType: 'CGST_SGST',
-                cgstRate: 9,
-                sgstRate: 9,
-                igstRate: 18,
-                subtotal: 0,
-                cgstAmount: 0,
-                sgstAmount: 0,
-                igstAmount: 0,
-                grossTotal: 0,
-                recordPayment: false,
-                paymentDate: new Date().toISOString().split('T')[0],
-                paymentAmount: '',
-                paymentMode: 'UPI',
-                paymentRef: ''
-              }); setShowInvoiceModal(true); }}
+              onClick={() => {
+                setCurrentInvoice({
+                  invoiceNo: `INV-${invoices.length + 101}`,
+                  invoiceDate: new Date().toISOString().split('T')[0],
+                  clientId: '',
+                  poNo: '',
+                  poDate: '',
+                  items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+                  taxType: 'CGST_SGST',
+                  cgstRate: 9,
+                  sgstRate: 9,
+                  igstRate: 18,
+                  subtotal: 0,
+                  cgstAmount: 0,
+                  sgstAmount: 0,
+                  igstAmount: 0,
+                  grossTotal: 0,
+                  recordPayment: false,
+                  paymentDate: new Date().toISOString().split('T')[0],
+                  paymentAmount: '',
+                  paymentMode: 'UPI',
+                  paymentRef: ''
+                }); setShowInvoiceModal(true);
+              }}
               style={{
                 padding: '10px 24px',
                 background: '#F0A500',
@@ -2098,22 +2100,24 @@ const EverReadySystem = () => {
 
           {currentPage === 'quotations' && (
             <button
-              onClick={() => { setCurrentQuotation({
-                quotationNo: `QUO-${quotations.length + 101}`,
-                quotationDate: new Date().toISOString().split('T')[0],
-                validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                clientId: '',
-                items: [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }],
-                taxType: 'CGST_SGST',
-                cgstRate: 9,
-                sgstRate: 9,
-                igstRate: 18,
-                subtotal: 0,
-                cgstAmount: 0,
-                sgstAmount: 0,
-                igstAmount: 0,
-                grossTotal: 0
-              }); setShowQuotationModal(true); }}
+              onClick={() => {
+                setCurrentQuotation({
+                  quotationNo: `QUO-${quotations.length + 101}`,
+                  quotationDate: new Date().toISOString().split('T')[0],
+                  validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                  clientId: '',
+                  items: [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }],
+                  taxType: 'CGST_SGST',
+                  cgstRate: 9,
+                  sgstRate: 9,
+                  igstRate: 18,
+                  subtotal: 0,
+                  cgstAmount: 0,
+                  sgstAmount: 0,
+                  igstAmount: 0,
+                  grossTotal: 0
+                }); setShowQuotationModal(true);
+              }}
               style={{
                 padding: '10px 24px',
                 background: '#F0A500',
@@ -2150,7 +2154,7 @@ const EverReadySystem = () => {
 
         {/* CONTENT AREA */}
         <div style={{ padding: '32px', flex: 1, overflowY: 'auto' }}>
-          
+
           {/* DASHBOARD PAGE */}
           {currentPage === 'dashboard' && (
             <div>
@@ -2186,7 +2190,7 @@ const EverReadySystem = () => {
 
               {/* Grid Logs / Layout lists */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px' }}>
-                
+
                 {/* Recent Payments Transaction Log */}
                 <div style={{ background: '#192338', border: '1px solid rgba(240,165,0,.18)', borderRadius: '12px', padding: '24px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -2214,7 +2218,7 @@ const EverReadySystem = () => {
 
                 {/* Overdue/Client listings */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                  
+
                   {/* High Value Clients */}
                   <div style={{ background: '#192338', border: '1px solid rgba(240,165,0,.18)', borderRadius: '12px', padding: '24px' }}>
                     <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500', marginBottom: '14px' }}>🏆 Top Billing Accounts</h2>
@@ -2266,13 +2270,13 @@ const EverReadySystem = () => {
                       style={{ width: '100%', padding: '10px 10px 10px 36px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
                     />
                   </div>
-                  <button 
+                  <button
                     onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
                     style={{ padding: '10px 16px', background: showAdvancedFilters ? '#F0A500' : 'rgba(240,165,0,.1)', color: showAdvancedFilters ? '#111d33' : '#F0A500', border: '1px solid rgba(240,165,0,.3)', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
                     <Filter size={16} /> Filters
                   </button>
-                  <button 
+                  <button
                     onClick={resetFilters}
                     style={{ padding: '10px 16px', background: 'transparent', color: '#8a96b0', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}
                   >
@@ -2365,7 +2369,7 @@ const EverReadySystem = () => {
                           <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                             {inv.po_file_name ? (
                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
-                                <button 
+                                <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     const byteCharacters = atob(inv.po_file_data);
@@ -2383,7 +2387,7 @@ const EverReadySystem = () => {
                                 >
                                   <Eye size={12} /> View
                                 </button>
-                                <button 
+                                <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     deleteInvoicePO(inv.id);
@@ -2395,7 +2399,7 @@ const EverReadySystem = () => {
                                 </button>
                               </div>
                             ) : (
-                              <button 
+                              <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   triggerPOUpload(inv.id);
@@ -2407,11 +2411,11 @@ const EverReadySystem = () => {
                             )}
                           </td>
                           <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                            <span style={{ 
-                              display: 'inline-block', 
-                              padding: '4px 8px', 
-                              fontSize: '10px', 
-                              fontWeight: '700', 
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '4px 8px',
+                              fontSize: '10px',
+                              fontWeight: '700',
                               borderRadius: '4px',
                               background: inv.payment_status === 'PAID' ? 'rgba(39,174,96,.15)' : inv.payment_status === 'PARTIAL' ? 'rgba(243,156,18,.15)' : inv.payment_status === 'OVERPAID' ? 'rgba(142,68,173,.15)' : 'rgba(192,57,43,.15)',
                               color: inv.payment_status === 'PAID' ? '#27ae60' : inv.payment_status === 'PARTIAL' ? '#f39c12' : inv.payment_status === 'OVERPAID' ? '#8e44ad' : '#c0392b'
@@ -2425,13 +2429,13 @@ const EverReadySystem = () => {
                               {inv.remaining_amount > 0 && (
                                 <button onClick={(e) => { e.stopPropagation(); openAddPaymentModal(inv); }} style={{ padding: '6px 10px', background: '#27ae60', border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}>+ Collect</button>
                               )}
-                              <button 
-                                onClick={(e) => { 
+                              <button
+                                onClick={(e) => {
                                   e.stopPropagation();
-                                  setReminderInvoice(inv); 
+                                  setReminderInvoice(inv);
                                   const isPaid = inv.payment_status === 'PAID' || inv.remaining_amount <= 0;
-                                  setReminderTemplate(isPaid ? 'created' : (inv.remaining_amount === inv.gross_total ? 'pending' : 'partial')); 
-                                  setShowReminderModal(true); 
+                                  setReminderTemplate(isPaid ? 'created' : (inv.remaining_amount === inv.gross_total ? 'pending' : 'partial'));
+                                  setShowReminderModal(true);
                                 }}
                                 style={{ padding: '6px 8px', background: 'rgba(52,152,219,.15)', border: 'none', borderRadius: '4px', color: '#3498db', cursor: 'pointer' }}
                               >
@@ -2455,7 +2459,7 @@ const EverReadySystem = () => {
             <div>
               {/* Back navigation header */}
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '24px' }}>
-                <button 
+                <button
                   onClick={() => { setCurrentPage('invoices'); setDetailedInvoice(null); }}
                   style={{ padding: '8px 16px', background: 'rgba(240,165,0,.1)', color: '#F0A500', border: '1px solid rgba(240,165,0,.3)', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
                 >
@@ -2465,11 +2469,11 @@ const EverReadySystem = () => {
                   <button onClick={() => exportInvoicePDF({ invoice: detailedInvoice, companySettings: company })} style={{ padding: '8px 14px', background: 'rgba(39,174,96,.15)', border: 'none', borderRadius: '6px', color: '#27ae60', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Printer size={14} /> Export PDF
                   </button>
-                  <button onClick={() => { 
-                    setReminderInvoice(detailedInvoice); 
+                  <button onClick={() => {
+                    setReminderInvoice(detailedInvoice);
                     const isPaid = detailedInvoice.payment_status === 'PAID' || detailedInvoice.remaining_amount <= 0;
-                    setReminderTemplate(isPaid ? 'created' : (detailedInvoice.remaining_amount === detailedInvoice.gross_total ? 'pending' : 'partial')); 
-                    setShowReminderModal(true); 
+                    setReminderTemplate(isPaid ? 'created' : (detailedInvoice.remaining_amount === detailedInvoice.gross_total ? 'pending' : 'partial'));
+                    setShowReminderModal(true);
                   }} style={{ padding: '8px 14px', background: 'rgba(52,152,219,.15)', border: 'none', borderRadius: '6px', color: '#3498db', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Share2 size={14} /> Share Reminder
                   </button>
@@ -2551,7 +2555,7 @@ const EverReadySystem = () => {
                 {/* TIMELINE AUDIT FEED */}
                 <div style={{ background: '#192338', border: '1px solid rgba(240,165,0,.15)', borderRadius: '12px', padding: '24px', maxHeight: '550px', display: 'flex', flexDirection: 'column' }}>
                   <h3 style={{ color: '#F0A500', fontSize: '15px', fontWeight: 'bold', marginBottom: '16px' }}>💬 Audit logs & Comments</h3>
-                  
+
                   {/* Message timeline area */}
                   <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px', marginBottom: '16px' }}>
                     {detailedComments.length === 0 ? (
@@ -2586,9 +2590,9 @@ const EverReadySystem = () => {
 
                   {/* Add note interface */}
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <input 
-                      type="text" 
-                      placeholder="Add system note..." 
+                    <input
+                      type="text"
+                      placeholder="Add system note..."
                       value={newCommentText}
                       onChange={(e) => setNewCommentText(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') addComment(); }}
@@ -2635,15 +2639,15 @@ const EverReadySystem = () => {
                           <p style={{ fontSize: '20px', fontWeight: '700', color: '#F0A500' }}>{quot.quotation_no}</p>
                           <p style={{ fontSize: '12px', color: '#8a96b0', marginTop: '4px' }}>{quot.clientName}</p>
                           <p style={{ fontSize: '12px', color: '#8a96b0', marginTop: '4px' }}>Valid until: {quot.valid_until}</p>
-                          <span style={{ 
-                            display: 'inline-block', 
-                            padding: '4px 8px', 
-                            background: quot.status === 'ACCEPTED' ? 'rgba(39,174,96,.15)' : quot.status === 'DECLINED' ? 'rgba(192,57,43,.15)' : 'rgba(243,156,18,.15)', 
-                            color: quot.status === 'ACCEPTED' ? '#27ae60' : quot.status === 'DECLINED' ? '#c0392b' : '#f39c12', 
-                            borderRadius: '4px', 
-                            fontSize: '10px', 
-                            fontWeight: '700', 
-                            marginTop: '8px' 
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '4px 8px',
+                            background: quot.status === 'ACCEPTED' ? 'rgba(39,174,96,.15)' : quot.status === 'DECLINED' ? 'rgba(192,57,43,.15)' : 'rgba(243,156,18,.15)',
+                            color: quot.status === 'ACCEPTED' ? '#27ae60' : quot.status === 'DECLINED' ? '#c0392b' : '#f39c12',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: '700',
+                            marginTop: '8px'
                           }}>
                             {quot.status}
                           </span>
@@ -2725,15 +2729,15 @@ const EverReadySystem = () => {
                           <p style={{ fontSize: '20px', fontWeight: '700', color: '#F0A500' }}>{po.po_no}</p>
                           <p style={{ fontSize: '12px', color: '#8a96b0', marginTop: '4px' }}>{po.clientName}</p>
                           <p style={{ fontSize: '12px', color: '#8a96b0', marginTop: '4px' }}>Valid until: {po.valid_until}</p>
-                          <span style={{ 
-                            display: 'inline-block', 
-                            padding: '4px 8px', 
-                            background: 'rgba(243,156,18,.15)', 
-                            color: '#f39c12', 
-                            borderRadius: '4px', 
-                            fontSize: '10px', 
-                            fontWeight: '700', 
-                            marginTop: '8px' 
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '4px 8px',
+                            background: 'rgba(243,156,18,.15)',
+                            color: '#f39c12',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: '700',
+                            marginTop: '8px'
                           }}>
                             {po.vendor_or_client}
                           </span>
@@ -2762,7 +2766,7 @@ const EverReadySystem = () => {
                             {/* File Attachment View/Upload/Delete */}
                             {po.file_name ? (
                               <div style={{ display: 'inline-flex', gap: '4px', alignItems: 'center', background: 'rgba(39,174,96,.1)', padding: '2px 6px', borderRadius: '6px' }}>
-                                <button 
+                                <button
                                   onClick={() => {
                                     const byteCharacters = atob(po.file_data);
                                     const byteNumbers = new Array(byteCharacters.length);
@@ -2777,10 +2781,10 @@ const EverReadySystem = () => {
                                   style={{ background: 'none', border: 'none', color: '#27ae60', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold' }}
                                   title={po.file_name}
                                 >
-                                  <Upload size={12} /> Scan
+                                  <Upload size={12} /> View
                                 </button>
-                                <button 
-                                  onClick={() => deletePurchaseOrderFile(po.id)} 
+                                <button
+                                  onClick={() => deletePurchaseOrderFile(po.id)}
                                   style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '2px' }}
                                   title="Delete File"
                                 >
@@ -2788,12 +2792,12 @@ const EverReadySystem = () => {
                                 </button>
                               </div>
                             ) : (
-                              <button 
-                                onClick={() => triggerFilePOUpload(po.id)} 
+                              <button
+                                onClick={() => triggerFilePOUpload(po.id)}
                                 style={{ padding: '4px 8px', background: 'rgba(240,165,0,.1)', border: 'none', borderRadius: '6px', color: '#F0A500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold' }}
                                 title="Upload File"
                               >
-                                <Upload size={12} /> Attach
+                                <Upload size={12} /> Upload
                               </button>
                             )}
 
@@ -2898,12 +2902,12 @@ const EverReadySystem = () => {
                   {/* Client list */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {clients.map(client => (
-                      <div 
-                        key={client.id} 
+                      <div
+                        key={client.id}
                         onClick={() => setSelectedClientOverview(selectedClientOverview?.id === client.id ? null : client)}
-                        style={{ 
-                          background: selectedClientOverview?.id === client.id ? 'rgba(240,165,0,.12)' : '#192338', 
-                          border: selectedClientOverview?.id === client.id ? '1px solid rgba(240,165,0,.5)' : '1px solid rgba(240,165,0,.18)', 
+                        style={{
+                          background: selectedClientOverview?.id === client.id ? 'rgba(240,165,0,.12)' : '#192338',
+                          border: selectedClientOverview?.id === client.id ? '1px solid rgba(240,165,0,.5)' : '1px solid rgba(240,165,0,.18)',
                           borderRadius: '12px', padding: '16px', cursor: 'pointer',
                           transition: 'all 0.2s'
                         }}
@@ -3092,9 +3096,9 @@ const EverReadySystem = () => {
               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid rgba(240,165,0,.15)', paddingBottom: '16px' }}>
                 <div style={{ minWidth: '200px' }}>
                   <label style={{ fontSize: '11px', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Select Client Account</label>
-                  <select 
-                    value={selectedLedgerClientId} 
-                    onChange={(e) => setSelectedLedgerClientId(e.target.value)} 
+                  <select
+                    value={selectedLedgerClientId}
+                    onChange={(e) => setSelectedLedgerClientId(e.target.value)}
                     style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
                   >
                     <option value="">Select Client</option>
@@ -3111,7 +3115,7 @@ const EverReadySystem = () => {
                 </div>
                 {selectedLedgerClientId && (
                   <div style={{ display: 'flex', gap: '10px', alignSelf: 'flex-end', marginLeft: 'auto' }}>
-                    <button 
+                    <button
                       onClick={() => {
                         const cl = clients.find(c => c.id == selectedLedgerClientId);
                         if (cl) exportLedgerPDF({ client: cl, ledgerEntries, companySettings: company });
@@ -3197,7 +3201,7 @@ const EverReadySystem = () => {
           {/* REPORTS & SALES BREAKDOWNS */}
           {currentPage === 'reports' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              
+
               {/* Date Filters bar */}
               <div style={{ background: '#192338', padding: '16px', borderRadius: '12px', border: '1px solid rgba(240,165,0,.15)', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <div>
@@ -3209,17 +3213,17 @@ const EverReadySystem = () => {
                   <input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} style={{ padding: '9px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
                 </div>
                 <div style={{ marginLeft: 'auto', alignSelf: 'flex-end' }}>
-                  <button 
+                  <button
                     onClick={async () => {
                       // Fetch payments list
                       const res = await fetch('/api/payments');
                       const payments = await res.json();
-                      exportToExcel({ 
-                        invoices, 
-                        payments: Array.isArray(payments) ? payments : [], 
-                        clients, 
-                        quotations, 
-                        companyName: company.name 
+                      exportToExcel({
+                        invoices,
+                        payments: Array.isArray(payments) ? payments : [],
+                        clients,
+                        quotations,
+                        companyName: company.name
                       });
                     }}
                     style={{ padding: '10px 18px', background: '#F0A500', color: '#111d33', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -3231,11 +3235,11 @@ const EverReadySystem = () => {
 
               {/* GST calculations */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px' }}>
-                
+
                 {/* GST Split report */}
                 <div style={{ background: '#192338', border: '1px solid rgba(240,165,0,.15)', borderRadius: '12px', padding: '24px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: 'bold', color: '#F0A500', marginBottom: '16px' }}>🏛️ Sales GST Breakdown Statement</h3>
-                  
+
                   {(() => {
                     let cgstTotal = 0;
                     let sgstTotal = 0;
@@ -3300,7 +3304,7 @@ const EverReadySystem = () => {
                   <h3 style={{ fontSize: '16px', fontWeight: 'bold', color: '#F0A500', marginBottom: '16px' }}>💳 Cash-flow mode metrics</h3>
                   {(() => {
                     const modeMap = { CASH: 0, UPI: 0, BANK_TRANSFER: 0, CHEQUE: 0, CARD: 0, OTHER: 0 };
-                    
+
                     // Summing collections on active state (simulating stats)
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -3452,7 +3456,7 @@ const EverReadySystem = () => {
               {/* Password Update Form */}
               <div style={{ background: '#192338', border: '1px solid rgba(240,165,0,.18)', borderRadius: '12px', padding: '24px', marginTop: '24px' }}>
                 <h3 style={{ fontSize: '17px', fontWeight: '700', color: '#F0A500', marginBottom: '16px' }}>🔒 Update Password</h3>
-                <form 
+                <form
                   onSubmit={async (e) => {
                     e.preventDefault();
                     const currentPassword = e.target.currentPassword.value;
@@ -3568,7 +3572,7 @@ const EverReadySystem = () => {
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '600px', padding: '32px', position: 'relative' }}>
             <button onClick={() => setShowReminderModal(false)} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
             <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#F0A500', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}><Share2 size={20} /> WhatsApp Reminder dispatch</h2>
-            
+
             <div style={{ marginBottom: '16px' }}>
               <label style={{ fontSize: '11px', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Choose Reminder template</label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px' }}>
@@ -3581,20 +3585,20 @@ const EverReadySystem = () => {
                   const isPaid = reminderInvoice.payment_status === 'PAID' || reminderInvoice.remaining_amount <= 0;
                   const isDisabled = isPaid && ['pending', 'partial', 'overdue'].includes(t.id);
                   return (
-                    <button 
-                      key={t.id} 
+                    <button
+                      key={t.id}
                       onClick={() => {
                         if (!isDisabled) setReminderTemplate(t.id);
                       }}
                       disabled={isDisabled}
-                      style={{ 
-                        padding: '8px', 
-                        background: reminderTemplate === t.id ? '#F0A500' : 'rgba(240,165,0,.08)', 
-                        color: reminderTemplate === t.id ? '#111d33' : '#8a96b0', 
-                        border: '1px solid rgba(240,165,0,.25)', 
-                        borderRadius: '6px', 
-                        fontSize: '11px', 
-                        fontWeight: 'bold', 
+                      style={{
+                        padding: '8px',
+                        background: reminderTemplate === t.id ? '#F0A500' : 'rgba(240,165,0,.08)',
+                        color: reminderTemplate === t.id ? '#111d33' : '#8a96b0',
+                        border: '1px solid rgba(240,165,0,.25)',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 'bold',
                         cursor: isDisabled ? 'not-allowed' : 'pointer',
                         opacity: isDisabled ? 0.4 : 1
                       }}
@@ -3608,10 +3612,10 @@ const EverReadySystem = () => {
 
             <div style={{ marginBottom: '20px' }}>
               <label style={{ fontSize: '11px', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Message Preview</label>
-              <textarea 
-                value={getReminderText()} 
-                readOnly 
-                rows="4" 
+              <textarea
+                value={getReminderText()}
+                readOnly
+                rows="4"
                 style={{ width: '100%', padding: '12px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px', resize: 'none', fontFamily: 'inherit' }}
               />
             </div>
@@ -3678,7 +3682,7 @@ const EverReadySystem = () => {
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', padding: '32px', position: 'relative' }}>
             <button onClick={closeInvoiceModal} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
-            
+
             <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#F0A500', marginBottom: '24px' }}>{editingInvoiceId ? '📝 Edit Invoice' : '🧾 Create Invoice'}</h2>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
@@ -3743,11 +3747,11 @@ const EverReadySystem = () => {
                       <td style={{ padding: '8px', fontSize: '11px' }}><input placeholder="Description" value={item.desc} onChange={(e) => updateInvoiceItem(idx, 'desc', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input placeholder="HSN" value={item.hsn} onChange={(e) => updateInvoiceItem(idx, 'hsn', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}>
-                        <input 
-                          placeholder="UOM" 
-                          value={item.uom || ''} 
-                          onChange={(e) => updateInvoiceItem(idx, 'uom', e.target.value)} 
-                          style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} 
+                        <input
+                          placeholder="UOM"
+                          value={item.uom || ''}
+                          onChange={(e) => updateInvoiceItem(idx, 'uom', e.target.value)}
+                          style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }}
                         />
                       </td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.qty} onChange={(e) => updateInvoiceItem(idx, 'qty', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
@@ -3814,42 +3818,42 @@ const EverReadySystem = () => {
             {!editingInvoiceId && (
               <div style={{ background: '#192338', border: '1px solid rgba(240,165,0,.15)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                  <input 
-                    type="checkbox" 
-                    id="recordInitialPayment" 
-                    checked={!!currentInvoice.recordPayment} 
-                    onChange={(e) => setCurrentInvoice({ ...currentInvoice, recordPayment: e.target.checked })} 
+                  <input
+                    type="checkbox"
+                    id="recordInitialPayment"
+                    checked={!!currentInvoice.recordPayment}
+                    onChange={(e) => setCurrentInvoice({ ...currentInvoice, recordPayment: e.target.checked })}
                     style={{ cursor: 'pointer' }}
                   />
                   <label htmlFor="recordInitialPayment" style={{ fontSize: '13px', fontWeight: 'bold', color: '#F0A500', cursor: 'pointer' }}>💳 Record Initial Payment Received</label>
                 </div>
-                
+
                 {currentInvoice.recordPayment && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
                     <div>
                       <label style={{ fontSize: '11px', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Payment Date</label>
-                      <input 
-                        type="date" 
-                        value={currentInvoice.paymentDate || new Date().toISOString().split('T')[0]} 
-                        onChange={(e) => setCurrentInvoice({ ...currentInvoice, paymentDate: e.target.value })} 
-                        style={{ width: '100%', padding: '8px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '6px', color: 'white', fontSize: '12px' }} 
+                      <input
+                        type="date"
+                        value={currentInvoice.paymentDate || new Date().toISOString().split('T')[0]}
+                        onChange={(e) => setCurrentInvoice({ ...currentInvoice, paymentDate: e.target.value })}
+                        style={{ width: '100%', padding: '8px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
                       />
                     </div>
                     <div>
                       <label style={{ fontSize: '11px', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Amount Received (₹)</label>
-                      <input 
-                        type="number" 
-                        placeholder="Enter amount" 
-                        value={currentInvoice.paymentAmount !== undefined ? currentInvoice.paymentAmount : currentInvoice.grossTotal} 
-                        onChange={(e) => setCurrentInvoice({ ...currentInvoice, paymentAmount: e.target.value })} 
-                        style={{ width: '100%', padding: '8px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '6px', color: 'white', fontSize: '12px' }} 
+                      <input
+                        type="number"
+                        placeholder="Enter amount"
+                        value={currentInvoice.paymentAmount !== undefined ? currentInvoice.paymentAmount : currentInvoice.grossTotal}
+                        onChange={(e) => setCurrentInvoice({ ...currentInvoice, paymentAmount: e.target.value })}
+                        style={{ width: '100%', padding: '8px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
                       />
                     </div>
                     <div>
                       <label style={{ fontSize: '11px', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Payment Mode</label>
-                      <select 
-                        value={currentInvoice.paymentMode || 'UPI'} 
-                        onChange={(e) => setCurrentInvoice({ ...currentInvoice, paymentMode: e.target.value })} 
+                      <select
+                        value={currentInvoice.paymentMode || 'UPI'}
+                        onChange={(e) => setCurrentInvoice({ ...currentInvoice, paymentMode: e.target.value })}
                         style={{ width: '100%', padding: '8px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
                       >
                         <option value="UPI">UPI</option>
@@ -3861,12 +3865,12 @@ const EverReadySystem = () => {
                     </div>
                     <div>
                       <label style={{ fontSize: '11px', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Reference No</label>
-                      <input 
-                        type="text" 
-                        placeholder="TXN Ref / Cheque No" 
-                        value={currentInvoice.paymentRef || ''} 
-                        onChange={(e) => setCurrentInvoice({ ...currentInvoice, paymentRef: e.target.value })} 
-                        style={{ width: '100%', padding: '8px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '6px', color: 'white', fontSize: '12px' }} 
+                      <input
+                        type="text"
+                        placeholder="TXN Ref / Cheque No"
+                        value={currentInvoice.paymentRef || ''}
+                        onChange={(e) => setCurrentInvoice({ ...currentInvoice, paymentRef: e.target.value })}
+                        style={{ width: '100%', padding: '8px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
                       />
                     </div>
                   </div>
@@ -3888,7 +3892,7 @@ const EverReadySystem = () => {
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', padding: '32px', position: 'relative' }}>
             <button onClick={closeQuotationModal} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
-            
+
             <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#F0A500', marginBottom: '24px' }}>{editingQuotationId ? '📝 Edit Quotation' : '📋 Create Quotation'}</h2>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
@@ -3957,11 +3961,11 @@ const EverReadySystem = () => {
                       <td style={{ padding: '8px', fontSize: '11px' }}><input placeholder="Description" value={item.desc} onChange={(e) => updateQuotationItem(idx, 'desc', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input placeholder="HSN" value={item.hsn} onChange={(e) => updateQuotationItem(idx, 'hsn', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}>
-                        <input 
-                          placeholder="UOM" 
-                          value={item.uom || ''} 
-                          onChange={(e) => updateQuotationItem(idx, 'uom', e.target.value)} 
-                          style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} 
+                        <input
+                          placeholder="UOM"
+                          value={item.uom || ''}
+                          onChange={(e) => updateQuotationItem(idx, 'uom', e.target.value)}
+                          style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }}
                         />
                       </td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.qty} onChange={(e) => updateQuotationItem(idx, 'qty', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
@@ -4039,7 +4043,7 @@ const EverReadySystem = () => {
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '700px', padding: '32px', position: 'relative' }}>
             <button onClick={closeClientModal} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
-            
+
             <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#F0A500', marginBottom: '24px' }}>{editingClientId ? '📝 Edit Client Details' : '🏢 Add Client'}</h2>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -4098,16 +4102,16 @@ const EverReadySystem = () => {
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '950px', maxHeight: '90vh', overflowY: 'auto', padding: '32px', position: 'relative' }}>
             <button onClick={closePurchaseOrderModal} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
-            
+
             <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#F0A500', marginBottom: '24px' }}>{editingPurchaseOrderId ? '📝 Edit Purchase Order' : '📦 Create New Purchase Order'}</h2>
 
             {/* Basic Info - 5 columns: Type | Company | PO No | PO Date | Valid Until */}
             <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 160px 160px 160px', gap: '16px', marginBottom: '24px' }}>
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Type</label>
-                <select 
-                  value={currentPurchaseOrder.vendor_or_client} 
-                  onChange={(e) => setCurrentPurchaseOrder({ ...currentPurchaseOrder, vendor_or_client: e.target.value })} 
+                <select
+                  value={currentPurchaseOrder.vendor_or_client}
+                  onChange={(e) => setCurrentPurchaseOrder({ ...currentPurchaseOrder, vendor_or_client: e.target.value })}
                   style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
                 >
                   <option value="CLIENT">Client</option>
@@ -4116,9 +4120,9 @@ const EverReadySystem = () => {
               </div>
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Company *</label>
-                <select 
-                  value={currentPurchaseOrder.clientId} 
-                  onChange={(e) => setCurrentPurchaseOrder({ ...currentPurchaseOrder, clientId: e.target.value })} 
+                <select
+                  value={currentPurchaseOrder.clientId}
+                  onChange={(e) => setCurrentPurchaseOrder({ ...currentPurchaseOrder, clientId: e.target.value })}
                   style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
                 >
                   <option value="">Select Company</option>
@@ -4308,28 +4312,28 @@ const EverReadySystem = () => {
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: '20px' }}>
           <div style={{ background: '#152035', border: '1px solid rgba(240,165,0,.18)', borderRadius: '14px', width: '100%', maxWidth: '500px', padding: '32px', position: 'relative' }}>
             <button onClick={() => setShowUploadPOModal(false)} style={{ position: 'absolute', right: '20px', top: '16px', background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
-            
+
             <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#F0A500', marginBottom: '24px' }}>📤 Upload Purchase Order</h2>
 
             <form onSubmit={async (e) => {
               e.preventDefault();
               await saveUploadedPO();
             }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              
+
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Vendor / Client *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select 
-                    value={currentUploadedPO.vendor_or_client} 
-                    onChange={(e) => setCurrentUploadedPO({ ...currentUploadedPO, vendor_or_client: e.target.value })} 
+                  <select
+                    value={currentUploadedPO.vendor_or_client}
+                    onChange={(e) => setCurrentUploadedPO({ ...currentUploadedPO, vendor_or_client: e.target.value })}
                     style={{ padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
                   >
                     <option value="CLIENT">Client</option>
                     <option value="VENDOR">Vendor</option>
                   </select>
-                  <select 
-                    value={currentUploadedPO.clientId} 
-                    onChange={(e) => setCurrentUploadedPO({ ...currentUploadedPO, clientId: e.target.value })} 
+                  <select
+                    value={currentUploadedPO.clientId}
+                    onChange={(e) => setCurrentUploadedPO({ ...currentUploadedPO, clientId: e.target.value })}
                     style={{ flex: 1, padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
                     required
                   >
@@ -4341,8 +4345,8 @@ const EverReadySystem = () => {
 
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Select File (PDF or Image) *</label>
-                <input 
-                  type="file" 
+                <input
+                  type="file"
                   accept="application/pdf, image/*"
                   onChange={(e) => {
                     const file = e.target.files[0];
@@ -4359,7 +4363,7 @@ const EverReadySystem = () => {
                       };
                       reader.readAsDataURL(file);
                     }
-                  }} 
+                  }}
                   style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
                   required
                 />
@@ -4367,7 +4371,7 @@ const EverReadySystem = () => {
 
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Notes</label>
-                <textarea 
+                <textarea
                   value={currentUploadedPO.notes}
                   onChange={(e) => setCurrentUploadedPO({ ...currentUploadedPO, notes: e.target.value })}
                   style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px', resize: 'vertical' }}
@@ -4396,9 +4400,9 @@ const EverReadySystem = () => {
               </div>
               <button onClick={() => setShowPreview(false)} style={{ background: 'none', border: 'none', fontSize: '24px', color: '#8a96b0', cursor: 'pointer' }}>✕</button>
             </div>
-            <DocumentPreview 
-              type={previewType} 
-              data={previewType === 'invoice' ? currentInvoice : previewType === 'quotation' ? currentQuotation : currentPurchaseOrder} 
+            <DocumentPreview
+              type={previewType}
+              data={previewType === 'invoice' ? currentInvoice : previewType === 'quotation' ? currentQuotation : currentPurchaseOrder}
             />
           </div>
         </div>
@@ -4412,17 +4416,17 @@ const EverReadySystem = () => {
             <h3 style={{ color: '#e74c3c', fontSize: '18px', marginBottom: '12px', fontWeight: 'bold' }}>{confirmConfig.title}</h3>
             <p style={{ color: '#8a96b0', fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>{confirmConfig.message}</p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button 
-                onClick={() => setConfirmConfig(null)} 
+              <button
+                onClick={() => setConfirmConfig(null)}
                 style={{ padding: '8px 16px', background: 'rgba(255,255,255,.05)', border: 'none', borderRadius: '6px', color: '#8a96b0', cursor: 'pointer', fontWeight: 'bold' }}
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={() => {
                   confirmConfig.onConfirm();
                   setConfirmConfig(null);
-                }} 
+                }}
                 style={{ padding: '8px 16px', background: '#e74c3c', border: 'none', borderRadius: '6px', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
               >
                 Confirm
@@ -4432,12 +4436,12 @@ const EverReadySystem = () => {
         </div>
       )}
 
-      <input 
-        type="file" 
-        ref={poInputRef} 
-        style={{ display: 'none' }} 
-        onChange={handlePOFileChange} 
-        accept="application/pdf, image/*" 
+      <input
+        type="file"
+        ref={poInputRef}
+        style={{ display: 'none' }}
+        onChange={handlePOFileChange}
+        accept="application/pdf, image/*"
       />
 
     </div>
