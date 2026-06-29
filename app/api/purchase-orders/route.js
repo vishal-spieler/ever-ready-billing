@@ -86,6 +86,13 @@ function formatPO(po) {
     // Flatten client details
     clientName: po.clientName || clientInfo.name,
     
+    fileName: po.file_name,
+    file_name: po.file_name,
+    fileType: po.file_type,
+    file_type: po.file_type,
+    fileData: po.file_data,
+    file_data: po.file_data,
+    
     items: formattedItems
   };
 }

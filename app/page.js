@@ -87,6 +87,7 @@ const EverReadySystem = () => {
   // PO upload references and states
   const poInputRef = useRef(null);
   const [uploadingPOInvoiceId, setUploadingPOInvoiceId] = useState(null);
+  const [uploadingFilePOId, setUploadingFilePOId] = useState(null);
 
   // Dropdown states
   const [showNotifications, setShowNotifications] = useState(false);
@@ -838,39 +839,79 @@ const EverReadySystem = () => {
     }
   };
 
+  const triggerFilePOUpload = (poId) => {
+    setUploadingFilePOId(poId);
+    if (poInputRef.current) {
+      poInputRef.current.value = ''; // Reset file input
+      poInputRef.current.click();
+    }
+  };
+
   const handlePOFileChange = async (e) => {
     const file = e.target.files[0];
-    if (!file || !uploadingPOInvoiceId) return;
+    if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64String = event.target.result.split(',')[1];
-      try {
-        const res = await fetch('/api/invoices/upload-po', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: uploadingPOInvoiceId,
-            fileName: file.name,
-            fileType: file.type,
-            fileData: base64String
-          })
-        });
-        const data = await res.json();
-        if (data.error) {
-          showToast('Error uploading PO: ' + data.error, 'error');
-        } else {
-          showToast('PO uploaded successfully!', 'success');
-          fetchInvoices();
+    if (uploadingPOInvoiceId) {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64String = event.target.result.split(',')[1];
+        try {
+          const res = await fetch('/api/invoices/upload-po', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: uploadingPOInvoiceId,
+              fileName: file.name,
+              fileType: file.type,
+              fileData: base64String
+            })
+          });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Error uploading PO: ' + data.error, 'error');
+          } else {
+            showToast('PO uploaded successfully!', 'success');
+            fetchInvoices();
+          }
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to upload PO', 'error');
+        } finally {
+          setUploadingPOInvoiceId(null);
         }
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to upload PO', 'error');
-      } finally {
-        setUploadingPOInvoiceId(null);
-      }
-    };
-    reader.readAsDataURL(file);
+      };
+      reader.readAsDataURL(file);
+    } else if (uploadingFilePOId) {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64String = event.target.result.split(',')[1];
+        try {
+          const res = await fetch('/api/purchase-orders/upload-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: uploadingFilePOId,
+              fileName: file.name,
+              fileType: file.type,
+              fileData: base64String
+            })
+          });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Error uploading file: ' + data.error, 'error');
+          } else {
+            showToast('File uploaded successfully!', 'success');
+            fetchPurchaseOrders();
+          }
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to upload file', 'error');
+        } finally {
+          setUploadingFilePOId(null);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const deleteInvoicePO = async (id) => {
@@ -894,6 +935,32 @@ const EverReadySystem = () => {
         } catch (err) {
           console.error(err);
           showToast('Failed to delete PO', 'error');
+        }
+      }
+    );
+  };
+
+  const deletePurchaseOrderFile = async (id) => {
+    triggerConfirm(
+      'Delete Attached File',
+      'Are you sure you want to delete the attached file for this Purchase Order?',
+      async () => {
+        try {
+          const res = await fetch('/api/purchase-orders/delete-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+          });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Error deleting file: ' + data.error, 'error');
+          } else {
+            showToast('File deleted successfully!', 'success');
+            fetchPurchaseOrders();
+          }
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to delete file', 'error');
         }
       }
     );
@@ -2673,7 +2740,7 @@ const EverReadySystem = () => {
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <p style={{ fontSize: '20px', fontWeight: '700', color: '#F0A500' }}>{formatCurrency(po.gross_total)}</p>
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
                             <button
                               onClick={async () => {
                                 try {
@@ -2687,18 +2754,60 @@ const EverReadySystem = () => {
                                 }
                               }}
                               style={{ padding: '6px', background: 'none', border: 'none', color: '#F0A500', cursor: 'pointer' }}
+                              title="Preview Document"
                             >
                               <Eye size={16} />
                             </button>
+
+                            {/* File Attachment View/Upload/Delete */}
+                            {po.file_name ? (
+                              <div style={{ display: 'inline-flex', gap: '4px', alignItems: 'center', background: 'rgba(39,174,96,.1)', padding: '2px 6px', borderRadius: '6px' }}>
+                                <button 
+                                  onClick={() => {
+                                    const byteCharacters = atob(po.file_data);
+                                    const byteNumbers = new Array(byteCharacters.length);
+                                    for (let i = 0; i < byteCharacters.length; i++) {
+                                      byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                    }
+                                    const byteArray = new Uint8Array(byteNumbers);
+                                    const blob = new Blob([byteArray], { type: po.file_type });
+                                    const url = URL.createObjectURL(blob);
+                                    window.open(url, '_blank');
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#27ae60', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold' }}
+                                  title={po.file_name}
+                                >
+                                  <Upload size={12} /> Scan
+                                </button>
+                                <button 
+                                  onClick={() => deletePurchaseOrderFile(po.id)} 
+                                  style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '2px' }}
+                                  title="Delete File"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            ) : (
+                              <button 
+                                onClick={() => triggerFilePOUpload(po.id)} 
+                                style={{ padding: '4px 8px', background: 'rgba(240,165,0,.1)', border: 'none', borderRadius: '6px', color: '#F0A500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold' }}
+                                title="Upload File"
+                              >
+                                <Upload size={12} /> Attach
+                              </button>
+                            )}
+
                             <button
                               onClick={() => openEditPurchaseOrderModal(po)}
                               style={{ padding: '6px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer' }}
+                              title="Edit PO"
                             >
                               <Edit2 size={16} />
                             </button>
                             <button
                               onClick={() => deletePurchaseOrder(po.id)}
                               style={{ padding: '6px', background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer' }}
+                              title="Delete PO"
                             >
                               <Trash2 size={16} />
                             </button>
