@@ -14,6 +14,11 @@ function formatInvoiceItem(item) {
     ...item,
     invoiceId: item.invoice_id,
     invoice_id: item.invoice_id,
+    uom: item.uom,
+    cgstRate: item.cgst_rate,
+    cgst_rate: item.cgst_rate,
+    sgstRate: item.sgst_rate,
+    sgst_rate: item.sgst_rate,
   };
 }
 
@@ -140,7 +145,10 @@ export async function POST(request) {
       hsn: item.hsn || null,
       qty: item.qty,
       rate: item.rate,
-      total: item.total
+      total: item.total,
+      uom: item.uom || null,
+      cgst_rate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+      sgst_rate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
     }));
 
     const newInvoice = await dbCreateInvoice(invoicePayload, formattedItems, initialPayment);
@@ -226,7 +234,10 @@ export async function PUT(request) {
       hsn: item.hsn || null,
       qty: item.qty,
       rate: item.rate,
-      total: item.total
+      total: item.total,
+      uom: item.uom || null,
+      cgst_rate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+      sgst_rate: item.sgstRate !== undefined ? item.sgst_rate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
     }));
 
     await dbUpdateInvoice(id, invoicePayload, formattedItems);

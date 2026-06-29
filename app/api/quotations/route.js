@@ -13,6 +13,11 @@ function formatQuotationItem(item) {
     ...item,
     quotationId: item.quotation_id,
     quotation_id: item.quotation_id,
+    uom: item.uom || 'Nos',
+    cgstRate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+    cgst_rate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+    sgstRate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9),
+    sgst_rate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
   };
 }
 
@@ -138,7 +143,10 @@ export async function POST(request) {
       hsn: item.hsn || null,
       qty: item.qty,
       rate: item.rate,
-      total: item.total
+      total: item.total,
+      uom: item.uom || 'Nos',
+      cgstRate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+      sgstRate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
     }));
 
     const newQuotation = await dbCreateQuotation(quotationPayload, formattedItems);
@@ -216,7 +224,10 @@ export async function PUT(request) {
       hsn: item.hsn || null,
       qty: item.qty,
       rate: item.rate,
-      total: item.total
+      total: item.total,
+      uom: item.uom || 'Nos',
+      cgstRate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+      sgstRate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
     }));
 
     await dbUpdateQuotation(id, quotationPayload, formattedItems);

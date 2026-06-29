@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, Eye, Bell, X, Download, Send, Edit2, 
   Search, Filter, RefreshCw, MessageSquare, Calendar, 
-  CreditCard, Landmark, CheckCircle, FileSpreadsheet, Share2, Printer, ChevronRight, FileText
+  CreditCard, Landmark, CheckCircle, FileSpreadsheet, Share2, Printer, ChevronRight, FileText, Upload
 } from 'lucide-react';
 import { exportToExcel, exportInvoicePDF, exportReceiptPDF, exportLedgerPDF, numberToWords } from '@/lib/exporter';
 
@@ -65,6 +65,11 @@ const EverReadySystem = () => {
   const [uploadedPOs, setUploadedPOs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [clients, setClients] = useState([]);
+  const [confirmConfig, setConfirmConfig] = useState(null);
+
+  const triggerConfirm = (title, message, onConfirm) => {
+    setConfirmConfig({ title, message, onConfirm });
+  };
 
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -78,6 +83,10 @@ const EverReadySystem = () => {
   const [detailedInvoice, setDetailedInvoice] = useState(null);
   const [detailedComments, setDetailedComments] = useState([]);
   const [newCommentText, setNewCommentText] = useState('');
+
+  // PO upload references and states
+  const poInputRef = useRef(null);
+  const [uploadingPOInvoiceId, setUploadingPOInvoiceId] = useState(null);
 
   // Dropdown states
   const [showNotifications, setShowNotifications] = useState(false);
@@ -117,7 +126,7 @@ const EverReadySystem = () => {
     clientId: '',
     poNo: '',
     poDate: '',
-    items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+    items: [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }],
     taxType: 'CGST_SGST',
     cgstRate: 9,
     sgstRate: 9,
@@ -136,7 +145,7 @@ const EverReadySystem = () => {
     quotationDate: new Date().toISOString().split('T')[0],
     validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     clientId: '',
-    items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+    items: [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }],
     taxType: 'CGST_SGST',
     cgstRate: 9,
     sgstRate: 9,
@@ -156,7 +165,7 @@ const EverReadySystem = () => {
     validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     clientId: '',
     vendor_or_client: 'CLIENT',
-    items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+    items: [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }],
     taxType: 'CGST_SGST',
     cgstRate: 9,
     sgstRate: 9,
@@ -355,37 +364,37 @@ const EverReadySystem = () => {
   };
 
   const fetchClients = async () => {
-    const res = await fetch('/api/clients');
+    const res = await fetch(`/api/clients?t=${Date.now()}`, { cache: 'no-store' });
     const data = await res.json();
     if (!data.error && Array.isArray(data)) setClients(data);
   };
 
   const fetchPurchaseOrders = async () => {
-    const res = await fetch('/api/purchase-orders');
+    const res = await fetch(`/api/purchase-orders?t=${Date.now()}`, { cache: 'no-store' });
     const data = await res.json();
     if (!data.error && Array.isArray(data)) setPurchaseOrders(data);
   };
 
   const fetchUploadedPOs = async () => {
-    const res = await fetch('/api/uploaded-pos');
+    const res = await fetch(`/api/uploaded-pos?t=${Date.now()}`, { cache: 'no-store' });
     const data = await res.json();
     if (!data.error && Array.isArray(data)) setUploadedPOs(data);
   };
 
   const fetchInvoices = async () => {
-    const res = await fetch('/api/invoices');
+    const res = await fetch(`/api/invoices?t=${Date.now()}`, { cache: 'no-store' });
     const data = await res.json();
     if (!data.error && Array.isArray(data)) setInvoices(data);
   };
 
   const fetchQuotations = async () => {
-    const res = await fetch('/api/quotations');
+    const res = await fetch(`/api/quotations?t=${Date.now()}`, { cache: 'no-store' });
     const data = await res.json();
     if (!data.error && Array.isArray(data)) setQuotations(data);
   };
 
   const fetchNotifications = async () => {
-    const res = await fetch('/api/notifications');
+    const res = await fetch(`/api/notifications?t=${Date.now()}`, { cache: 'no-store' });
     const data = await res.json();
     if (!data.error && Array.isArray(data)) setNotifications(data);
   };
@@ -593,19 +602,33 @@ const EverReadySystem = () => {
   // ═══════════════════════════════════════════════════════════════════
   // INVOICE CRUDS
   // ═══════════════════════════════════════════════════════════════════
-  const calculateTotals = (items, taxType, cgstRate, sgstRate, igstRate, discount = 0, transportCharges = 0) => {
+  const calculateTotals = (items, taxType, cgstRate, sgstRate, igstRate, discount = 0, transportCharges = 0, isItemLevelTax = false) => {
     const subtotal = items.reduce((sum, item) => sum + (item.qty * item.rate), 0);
-    const taxableAmount = Math.max(0, subtotal - (parseFloat(discount) || 0));
+    const discountVal = parseFloat(discount) || 0;
+    const transportVal = parseFloat(transportCharges) || 0;
     let cgstAmount = 0, sgstAmount = 0, igstAmount = 0;
 
-    if (taxType === 'CGST_SGST') {
-      cgstAmount = taxableAmount * (cgstRate / 100);
-      sgstAmount = taxableAmount * (sgstRate / 100);
-    } else if (taxType === 'IGST') {
-      igstAmount = taxableAmount * (igstRate / 100);
+    if (isItemLevelTax) {
+      const discountRatio = subtotal > 0 ? (subtotal - discountVal) / subtotal : 1;
+      items.forEach(item => {
+        const itemSubtotal = item.qty * item.rate;
+        const discountedSubtotal = itemSubtotal * discountRatio;
+        const itemCgstRate = item.cgstRate !== undefined ? parseFloat(item.cgstRate) : 9;
+        const itemSgstRate = item.sgstRate !== undefined ? parseFloat(item.sgstRate) : 9;
+        cgstAmount += discountedSubtotal * (itemCgstRate / 100);
+        sgstAmount += discountedSubtotal * (itemSgstRate / 100);
+      });
+    } else {
+      const taxableAmount = Math.max(0, subtotal - discountVal);
+      if (taxType === 'CGST_SGST') {
+        cgstAmount = taxableAmount * (cgstRate / 100);
+        sgstAmount = taxableAmount * (sgstRate / 100);
+      } else if (taxType === 'IGST') {
+        igstAmount = taxableAmount * (igstRate / 100);
+      }
     }
 
-    const grossTotal = taxableAmount + cgstAmount + sgstAmount + igstAmount + (parseFloat(transportCharges) || 0);
+    const grossTotal = Math.max(0, subtotal - discountVal) + cgstAmount + sgstAmount + igstAmount + transportVal;
 
     return {
       subtotal: parseFloat(subtotal.toFixed(2)),
@@ -616,25 +639,44 @@ const EverReadySystem = () => {
     };
   };
 
+  const getItemTaxAmount = (item, taxType, discount, itemsList, igstRate = 18) => {
+    const subtotal = itemsList.reduce((sum, it) => sum + (it.qty * it.rate), 0);
+    const discountVal = parseFloat(discount) || 0;
+    const discountRatio = subtotal > 0 ? (subtotal - discountVal) / subtotal : 1;
+    const itemSubtotal = item.qty * item.rate;
+    const taxableSubtotal = itemSubtotal * discountRatio;
+    
+    let taxRate = 0;
+    if (taxType === 'CGST_SGST') {
+      const cgst = item.cgstRate !== undefined ? parseFloat(item.cgstRate) : 9;
+      const sgst = item.sgstRate !== undefined ? parseFloat(item.sgstRate) : 9;
+      taxRate = cgst + sgst;
+    } else if (taxType === 'IGST') {
+      taxRate = parseFloat(igstRate) || 18;
+    }
+    
+    return parseFloat((taxableSubtotal * (taxRate / 100)).toFixed(2));
+  };
+
   const updateInvoiceItem = (index, field, value) => {
     const items = [...currentInvoice.items];
-    items[index][field] = field === 'qty' || field === 'rate' || field === 'sr' ? parseFloat(value) || 0 : value;
+    items[index][field] = field === 'qty' || field === 'rate' || field === 'sr' || field === 'cgstRate' || field === 'sgstRate' ? parseFloat(value) || 0 : value;
     if (field === 'qty' || field === 'rate') {
       items[index].total = (items[index].qty * items[index].rate);
     }
-    const totals = calculateTotals(items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, currentInvoice.discount, currentInvoice.transportCharges);
+    const totals = calculateTotals(items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, currentInvoice.discount, currentInvoice.transportCharges, true);
     setCurrentInvoice({ ...currentInvoice, items, ...totals });
   };
 
   const addInvoiceItem = () => {
-    const items = [...currentInvoice.items, { sr: currentInvoice.items.length + 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }];
-    const totals = calculateTotals(items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, currentInvoice.discount, currentInvoice.transportCharges);
+    const items = [...currentInvoice.items, { sr: currentInvoice.items.length + 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }];
+    const totals = calculateTotals(items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, currentInvoice.discount, currentInvoice.transportCharges, true);
     setCurrentInvoice({ ...currentInvoice, items, ...totals });
   };
 
   const removeInvoiceItem = (index) => {
     const items = currentInvoice.items.filter((_, i) => i !== index);
-    const totals = calculateTotals(items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, currentInvoice.discount, currentInvoice.transportCharges);
+    const totals = calculateTotals(items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, currentInvoice.discount, currentInvoice.transportCharges, true);
     setCurrentInvoice({ ...currentInvoice, items, ...totals });
   };
 
@@ -645,7 +687,7 @@ const EverReadySystem = () => {
       clientId: '',
       poNo: '',
       poDate: '',
-      items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+      items: [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }],
       taxType: 'CGST_SGST',
       cgstRate: 9,
       sgstRate: 9,
@@ -686,9 +728,12 @@ const EverReadySystem = () => {
           sr: item.sr,
           desc: item.desc || item.description,
           hsn: item.hsn || '',
+          uom: item.uom || 'Nos',
           qty: item.qty,
           rate: item.rate,
-          total: item.total
+          total: item.total,
+          cgstRate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+          sgstRate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
         })),
         taxType: data.taxType || data.tax_type || 'CGST_SGST',
         cgstRate: data.cgstRate || data.cgst_rate || 9,
@@ -760,24 +805,98 @@ const EverReadySystem = () => {
   };
 
   const deleteInvoice = async (id) => {
-    if (!confirm('Are you sure you want to delete this invoice? This action is irreversible.')) return;
-    try {
-      const res = await fetch(`/api/invoices?id=${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.error) {
-        showToast('Error deleting invoice: ' + data.error, 'error');
-        return;
+    triggerConfirm(
+      'Delete Invoice',
+      'Are you sure you want to delete this invoice? This action is irreversible.',
+      async () => {
+        try {
+          const res = await fetch(`/api/invoices?id=${id}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Error deleting invoice: ' + data.error, 'error');
+            return;
+          }
+          await fetchInvoices();
+          await fetchNotifications();
+          showToast('Invoice deleted', 'success');
+          if (currentPage === 'invoice-detail') {
+            setCurrentPage('invoices');
+          }
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to delete invoice', 'error');
+        }
       }
-      await fetchInvoices();
-      await fetchNotifications();
-      showToast('Invoice deleted', 'success');
-      if (currentPage === 'invoice-detail') {
-        setCurrentPage('invoices');
-      }
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to delete invoice', 'error');
+    );
+  };
+
+  const triggerPOUpload = (invoiceId) => {
+    setUploadingPOInvoiceId(invoiceId);
+    if (poInputRef.current) {
+      poInputRef.current.value = ''; // Reset file input
+      poInputRef.current.click();
     }
+  };
+
+  const handlePOFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !uploadingPOInvoiceId) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64String = event.target.result.split(',')[1];
+      try {
+        const res = await fetch('/api/invoices/upload-po', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: uploadingPOInvoiceId,
+            fileName: file.name,
+            fileType: file.type,
+            fileData: base64String
+          })
+        });
+        const data = await res.json();
+        if (data.error) {
+          showToast('Error uploading PO: ' + data.error, 'error');
+        } else {
+          showToast('PO uploaded successfully!', 'success');
+          fetchInvoices();
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to upload PO', 'error');
+      } finally {
+        setUploadingPOInvoiceId(null);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const deleteInvoicePO = async (id) => {
+    triggerConfirm(
+      'Delete PO File',
+      'Are you sure you want to delete the attached PO file?',
+      async () => {
+        try {
+          const res = await fetch('/api/invoices/delete-po', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+          });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Error deleting PO: ' + data.error, 'error');
+          } else {
+            showToast('PO deleted successfully!', 'success');
+            fetchInvoices();
+          }
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to delete PO', 'error');
+        }
+      }
+    );
   };
 
   const markFullyPaid = async (inv) => {
@@ -871,24 +990,29 @@ const EverReadySystem = () => {
   };
 
   const deletePayment = async (payId) => {
-    if (!confirm('Are you sure you want to delete this payment transaction?')) return;
-    try {
-      const res = await fetch(`/api/payments/${payId}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.error) {
-        showToast('Error deleting payment: ' + data.error, 'error');
-        return;
+    triggerConfirm(
+      'Delete Payment',
+      'Are you sure you want to delete this payment transaction?',
+      async () => {
+        try {
+          const res = await fetch(`/api/payments/${payId}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Error deleting payment: ' + data.error, 'error');
+            return;
+          }
+          await fetchInvoices();
+          await fetchNotifications();
+          showToast('Payment transaction deleted', 'success');
+          if (selectedInvoiceId) {
+            viewInvoiceDetail(selectedInvoiceId);
+          }
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to delete payment', 'error');
+        }
       }
-      await fetchInvoices();
-      await fetchNotifications();
-      showToast('Payment transaction deleted', 'success');
-      if (selectedInvoiceId) {
-        viewInvoiceDetail(selectedInvoiceId);
-      }
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to delete payment', 'error');
-    }
+    );
   };
 
   // ═══════════════════════════════════════════════════════════════════
@@ -896,23 +1020,23 @@ const EverReadySystem = () => {
   // ═══════════════════════════════════════════════════════════════════
   const updateQuotationItem = (index, field, value) => {
     const items = [...currentQuotation.items];
-    items[index][field] = field === 'qty' || field === 'rate' || field === 'sr' ? parseFloat(value) || 0 : value;
+    items[index][field] = field === 'qty' || field === 'rate' || field === 'sr' || field === 'cgstRate' || field === 'sgstRate' ? parseFloat(value) || 0 : value;
     if (field === 'qty' || field === 'rate') {
       items[index].total = (items[index].qty * items[index].rate);
     }
-    const totals = calculateTotals(items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, currentQuotation.discount, currentQuotation.transportCharges);
+    const totals = calculateTotals(items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, currentQuotation.discount, currentQuotation.transportCharges, true);
     setCurrentQuotation({ ...currentQuotation, items, ...totals });
   };
 
   const addQuotationItem = () => {
-    const items = [...currentQuotation.items, { sr: currentQuotation.items.length + 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }];
-    const totals = calculateTotals(items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, currentQuotation.discount, currentQuotation.transportCharges);
+    const items = [...currentQuotation.items, { sr: currentQuotation.items.length + 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }];
+    const totals = calculateTotals(items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, currentQuotation.discount, currentQuotation.transportCharges, true);
     setCurrentQuotation({ ...currentQuotation, items, ...totals });
   };
 
   const removeQuotationItem = (index) => {
     const items = currentQuotation.items.filter((_, i) => i !== index);
-    const totals = calculateTotals(items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, currentQuotation.discount, currentQuotation.transportCharges);
+    const totals = calculateTotals(items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, currentQuotation.discount, currentQuotation.transportCharges, true);
     setCurrentQuotation({ ...currentQuotation, items, ...totals });
   };
 
@@ -922,7 +1046,7 @@ const EverReadySystem = () => {
       quotationDate: new Date().toISOString().split('T')[0],
       validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       clientId: '',
-      items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+      items: [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }],
       taxType: 'CGST_SGST',
       cgstRate: 9,
       sgstRate: 9,
@@ -958,9 +1082,12 @@ const EverReadySystem = () => {
           sr: item.sr,
           desc: item.desc || item.description,
           hsn: item.hsn || '',
+          uom: item.uom || 'Nos',
           qty: item.qty,
           rate: item.rate,
-          total: item.total
+          total: item.total,
+          cgstRate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+          sgstRate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
         })),
         taxType: data.taxType || data.tax_type || 'CGST_SGST',
         cgstRate: data.cgstRate || data.cgst_rate || 9,
@@ -1014,21 +1141,26 @@ const EverReadySystem = () => {
   };
 
   const deleteQuotation = async (id) => {
-    if (!confirm('Are you sure you want to delete this quotation?')) return;
-    try {
-      const res = await fetch(`/api/quotations?id=${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.error) {
-        showToast('Error deleting quotation: ' + data.error, 'error');
-        return;
+    triggerConfirm(
+      'Delete Quotation',
+      'Are you sure you want to delete this quotation?',
+      async () => {
+        try {
+          const res = await fetch(`/api/quotations?id=${id}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Error deleting quotation: ' + data.error, 'error');
+            return;
+          }
+          await fetchQuotations();
+          await fetchNotifications();
+          showToast('Quotation deleted', 'success');
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to delete quotation', 'error');
+        }
       }
-      await fetchQuotations();
-      await fetchNotifications();
-      showToast('Quotation deleted', 'success');
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to delete quotation', 'error');
-    }
+    );
   };
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1093,20 +1225,25 @@ const EverReadySystem = () => {
   };
 
   const deleteClient = async (id) => {
-    if (!confirm('Are you sure you want to delete this client?')) return;
-    try {
-      const res = await fetch(`/api/clients?id=${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.error) {
-        showToast('Cannot delete client: ' + data.error, 'error');
-        return;
+    triggerConfirm(
+      'Delete Client',
+      'Are you sure you want to delete this client?',
+      async () => {
+        try {
+          const res = await fetch(`/api/clients?id=${id}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Cannot delete client: ' + data.error, 'error');
+            return;
+          }
+          await fetchClients();
+          showToast('Client records deleted', 'success');
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to delete client records', 'error');
+        }
       }
-      await fetchClients();
-      showToast('Client records deleted', 'success');
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to delete client records', 'error');
-    }
+    );
   };
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1169,16 +1306,17 @@ const EverReadySystem = () => {
   // PURCHASE ORDER CRUDS
   // ═══════════════════════════════════════════════════════════════════
   const addPurchaseOrderItem = () => {
-    setCurrentPurchaseOrder(prev => ({
-      ...prev,
-      items: [...prev.items, { sr: prev.items.length + 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }]
-    }));
+    setCurrentPurchaseOrder(prev => {
+      const items = [...prev.items, { sr: prev.items.length + 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }];
+      const totals = calculateTotals(items, prev.taxType, prev.cgstRate, prev.sgstRate, prev.igstRate, prev.discount, prev.transportCharges, true);
+      return { ...prev, items, ...totals };
+    });
   };
 
   const removePurchaseOrderItem = (index) => {
     setCurrentPurchaseOrder(prev => {
       const newItems = prev.items.filter((_, i) => i !== index).map((item, idx) => ({ ...item, sr: idx + 1 }));
-      const totals = calculateTotals(newItems, prev.taxType, prev.cgstRate, prev.sgstRate, prev.igstRate, prev.discount, prev.transportCharges);
+      const totals = calculateTotals(newItems, prev.taxType, prev.cgstRate, prev.sgstRate, prev.igstRate, prev.discount, prev.transportCharges, true);
       return { ...prev, items: newItems, ...totals };
     });
   };
@@ -1190,7 +1328,7 @@ const EverReadySystem = () => {
       validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       clientId: '',
       vendor_or_client: 'CLIENT',
-      items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+      items: [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }],
       taxType: 'CGST_SGST',
       cgstRate: 9,
       sgstRate: 9,
@@ -1228,8 +1366,11 @@ const EverReadySystem = () => {
       grossTotal: po.grossTotal ?? po.gross_total ?? 0,
       items: po.items && po.items.length > 0 ? po.items.map(item => ({
         ...item,
-        desc: item.desc || item.description || ''
-      })) : [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }]
+        desc: item.desc || item.description || '',
+        uom: item.uom || 'Nos',
+        cgstRate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+        sgstRate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
+      })) : [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }]
     });
     setEditingPurchaseOrderId(po.id);
     setShowPurchaseOrderModal(true);
@@ -1278,21 +1419,26 @@ const EverReadySystem = () => {
   };
 
   const deletePurchaseOrder = async (id) => {
-    if (!confirm('Are you sure you want to delete this purchase order?')) return;
-    try {
-      const res = await fetch(`/api/purchase-orders?id=${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.error) {
-        showToast('Error deleting purchase order: ' + data.error, 'error');
-        return;
+    triggerConfirm(
+      'Delete Purchase Order',
+      'Are you sure you want to delete this purchase order?',
+      async () => {
+        try {
+          const res = await fetch(`/api/purchase-orders?id=${id}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Error deleting purchase order: ' + data.error, 'error');
+            return;
+          }
+          await fetchPurchaseOrders();
+          await fetchNotifications();
+          showToast('Purchase Order deleted', 'success');
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to delete purchase order', 'error');
+        }
       }
-      await fetchPurchaseOrders();
-      await fetchNotifications();
-      showToast('Purchase Order deleted', 'success');
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to delete purchase order', 'error');
-    }
+    );
   };
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1338,20 +1484,25 @@ const EverReadySystem = () => {
   };
 
   const deleteUploadedPO = async (id) => {
-    if (!confirm('Are you sure you want to delete this uploaded PO?')) return;
-    try {
-      const res = await fetch(`/api/uploaded-pos?id=${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.error) {
-        showToast('Error deleting uploaded PO: ' + data.error, 'error');
-        return;
+    triggerConfirm(
+      'Delete Uploaded PO',
+      'Are you sure you want to delete this uploaded PO?',
+      async () => {
+        try {
+          const res = await fetch(`/api/uploaded-pos?id=${id}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.error) {
+            showToast('Error deleting uploaded PO: ' + data.error, 'error');
+            return;
+          }
+          await fetchUploadedPOs();
+          showToast('Uploaded PO deleted', 'success');
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to delete uploaded PO', 'error');
+        }
       }
-      await fetchUploadedPOs();
-      showToast('Uploaded PO deleted', 'success');
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to delete uploaded PO', 'error');
-    }
+    );
   };
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1459,30 +1610,31 @@ const EverReadySystem = () => {
 
     if (type === 'invoice') {
       if (data.recordPayment) {
-        totalPaid = parseFloat(data.paymentAmount !== undefined && data.paymentAmount !== '' ? data.paymentAmount : (data.grossTotal || data.gross_total || 0)) || 0;
+        const addedPayment = parseFloat(data.paymentAmount !== undefined && data.paymentAmount !== '' ? data.paymentAmount : (data.grossTotal || data.gross_total || 0)) || 0;
+        totalPaid = (data.total_paid || 0) + addedPayment;
         remaining = (data.grossTotal || data.gross_total || 0) - totalPaid;
       } else {
         totalPaid = data.total_paid || 0;
-        remaining = data.remaining_amount !== undefined ? data.remaining_amount : ((data.grossTotal || data.gross_total || 0) - totalPaid);
+        remaining = (data.grossTotal || data.gross_total || 0) - totalPaid;
       }
     }
 
     return (
-      <div className="print-document" style={{ background: 'white', color: '#1B2A4A', padding: '40px', borderRadius: '8px', fontFamily: 'Arial, sans-serif', fontSize: '12px', lineHeight: '1.6' }}>
+      <div className="print-document" style={{ background: 'white', color: '#1B2A4A', padding: '16px 40px 40px 40px', borderRadius: '8px', fontFamily: 'Arial, sans-serif', fontSize: '12px', lineHeight: '1.6' }}>
         {/* Header */}
-        <div style={{ border: '3px solid #333', padding: '20px', marginBottom: '20px', display: 'grid', gridTemplateColumns: '160px 1fr', gap: '20px', alignItems: 'center' }}>
+        <div style={{ border: '1px solid #ddd', padding: '10px 16px', marginBottom: '12px', display: 'grid', gridTemplateColumns: '100px 1fr', gap: '16px', alignItems: 'center' }}>
           <div>
-            <Logo width={150} height={98} theme="light" />
+            <Logo width={90} height={60} theme="light" />
           </div>
           <div style={{ textAlign: 'right' }}>
-            <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#1B2A4A' }}>{company.name}</h1>
-            <p style={{ fontSize: '11px', margin: '4px 0', color: '#555' }}>{company.address}</p>
-            <p style={{ fontSize: '11px', margin: '2px 0', color: '#555' }}>Mob-{company.phone} , Email -{company.email}</p>
-            <p style={{ fontSize: '11px', margin: '2px 0', fontWeight: 'bold', color: '#1B2A4A' }}>GST NO-{company.gstin}</p>
+            <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#1B2A4A' }}>{company.name}</h1>
+            <p style={{ fontSize: '10px', margin: '2px 0', color: '#555' }}>{company.address}</p>
+            <p style={{ fontSize: '10px', margin: '2px 0', color: '#555' }}>Mob-{company.phone} , Email -{company.email}</p>
+            <p style={{ fontSize: '10.5px', margin: '2px 0', fontWeight: 'bold', color: '#1B2A4A' }}>GST NO-{company.gstin}</p>
           </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <hr style={{ margin: '8px 0', borderTop: '2px solid #333' }} />
-            <p style={{ textAlign: 'center', fontSize: '18px', fontWeight: 'bold', margin: '0' }}>{docTitle}</p>
+          <div style={{ gridColumn: '1 / -1', marginTop: '-4px' }}>
+            <hr style={{ margin: '4px 0', borderTop: '1px solid #ccc' }} />
+            <p style={{ textAlign: 'center', fontSize: '14px', fontWeight: 'bold', margin: '0' }}>{docTitle}</p>
           </div>
         </div>
 
@@ -1517,25 +1669,38 @@ const EverReadySystem = () => {
         <table style={{ width: '100%', borderCollapse: 'collapse', margin: '16px 0', border: '1px solid #ccc' }}>
           <thead>
             <tr style={{ background: '#1B2A4A', color: 'white' }}>
-              <th style={{ border: '1px solid #333', padding: '8px', textAlign: 'left', fontSize: '10px' }}>Sr. No</th>
-              <th style={{ border: '1px solid #333', padding: '8px', textAlign: 'left', fontSize: '10px' }}>Material Description</th>
-              <th style={{ border: '1px solid #333', padding: '8px', textAlign: 'left', fontSize: '10px' }}>HSN code</th>
-              <th style={{ border: '1px solid #333', padding: '8px', textAlign: 'center', fontSize: '10px' }}>Qty</th>
-              <th style={{ border: '1px solid #333', padding: '8px', textAlign: 'right', fontSize: '10px' }}>Rate</th>
-              <th style={{ border: '1px solid #333', padding: '8px', textAlign: 'right', fontSize: '10px' }}>Total</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'left', fontSize: '10px', width: '40px' }}>Sr. No</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'left', fontSize: '10px' }}>Material Description</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'left', fontSize: '10px', width: '80px' }}>HSN code</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'left', fontSize: '10px', width: '65px' }}>UOM</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'center', fontSize: '10px', width: '50px' }}>Qty</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'right', fontSize: '10px', width: '70px' }}>Rate</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'center', fontSize: '10px', width: '55px' }}>CGST</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'center', fontSize: '10px', width: '55px' }}>SGST</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'right', fontSize: '10px', width: '75px' }}>Tax Amt</th>
+              <th style={{ border: '1px solid #333', padding: '6px', textAlign: 'right', fontSize: '10px', width: '90px' }}>Total</th>
             </tr>
           </thead>
           <tbody>
-            {data.items && data.items.map((item, i) => (
-              <tr key={i}>
-                <td style={{ border: '1px solid #ccc', padding: '8px', fontSize: '11px' }}>{item.sr}</td>
-                <td style={{ border: '1px solid #ccc', padding: '8px', fontSize: '11px' }}>{item.desc || item.description}</td>
-                <td style={{ border: '1px solid #ccc', padding: '8px', fontSize: '11px' }}>{item.hsn || '—'}</td>
-                <td style={{ border: '1px solid #ccc', padding: '8px', fontSize: '11px', textAlign: 'center' }}>{item.qty}</td>
-                <td style={{ border: '1px solid #ccc', padding: '8px', fontSize: '11px', textAlign: 'right' }}>₹{(item.rate || 0).toFixed(2)}</td>
-                <td style={{ border: '1px solid #ccc', padding: '8px', fontSize: '11px', textAlign: 'right' }}>₹{(item.total || 0).toFixed(2)}</td>
-              </tr>
-            ))}
+            {data.items && data.items.map((item, i) => {
+              const cgst = item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9);
+              const sgst = item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9);
+              const taxAmt = getItemTaxAmount(item, data.taxType || data.tax_type || 'CGST_SGST', data.discount || 0, data.items, data.igstRate || 18);
+              return (
+                <tr key={i}>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px' }}>{item.sr}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px' }}>{item.desc || item.description}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px' }}>{item.hsn || '—'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px' }}>{item.uom || item.unitType || 'Nos'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px', textAlign: 'center' }}>{item.qty}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px', textAlign: 'right' }}>₹{(item.rate || 0).toFixed(2)}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px', textAlign: 'center' }}>{cgst}%</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px', textAlign: 'center' }}>{sgst}%</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px', textAlign: 'right' }}>₹{taxAmt.toFixed(2)}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', fontSize: '11px', textAlign: 'right' }}>₹{(item.total || 0).toFixed(2)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
@@ -1559,20 +1724,11 @@ const EverReadySystem = () => {
                 <span>Taxable Amount</span><span>₹{(Math.max(0, (data.subtotal || 0) - (data.discount || 0))).toFixed(2)}</span>
               </div>
             )}
-            {(data.taxType || data.tax_type) === 'CGST_SGST' ? (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #ddd' }}>
-                  <span>CGST @{data.cgstRate || 9}%</span><span>₹{(data.cgstAmount || 0).toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #ddd' }}>
-                  <span>SGST @{data.sgstRate || 9}%</span><span>₹{(data.sgstAmount || 0).toFixed(2)}</span>
-                </div>
-              </>
-            ) : (data.taxType || data.tax_type) === 'IGST' ? (
+             {((data.cgstAmount || 0) + (data.sgstAmount || 0) + (data.igstAmount || 0)) > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #ddd' }}>
-                <span>IGST @{data.igstRate || 18}%</span><span>₹{(data.igstAmount || 0).toFixed(2)}</span>
+                <span>Total Tax Amount</span><span>₹{((data.cgstAmount || 0) + (data.sgstAmount || 0) + (data.igstAmount || 0)).toFixed(2)}</span>
               </div>
-            ) : null}
+            )}
             {(data.transportCharges || data.transport_charges || 0) > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #ddd' }}>
                 <span>Transport Charges</span><span>₹{(data.transportCharges || data.transport_charges || 0).toFixed(2)}</span>
@@ -1594,27 +1750,30 @@ const EverReadySystem = () => {
           </div>
         </div>
 
-        {/* Bank Details */}
-        <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #ddd', fontSize: '11px' }}>
-          <p><strong>Account holder -</strong> {company.accountName}</p>
-          <p>Account Number - {company.accountNo}</p>
-          <p>IFSC Code - {company.ifscCode}</p>
-          <p>Bank - {company.bankName}</p>
-          <p>Branch - {company.bankBranch}</p>
-        </div>
-
-        {/* Signatures */}
-        <div style={{ marginTop: '40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', textAlign: 'center', fontSize: '10px' }}>
+        {/* Bottom Details Section */}
+        <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #ddd', display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px' }}>
+          {/* Left Column: Bank Details & Receiver Sign */}
           <div>
-            <p style={{ marginBottom: '60px' }}>Receiver</p>
-            <p>Sign</p>
+            <div style={{ fontSize: '11px', lineHeight: '1.5' }}>
+              <p><strong>Account holder -</strong> {company.accountName}</p>
+              <p>Account Number - {company.accountNo}</p>
+              <p>IFSC Code - {company.ifscCode}</p>
+              <p>Bank - {company.bankName}</p>
+              <p>Branch - {company.bankBranch}</p>
+            </div>
+            <div style={{ marginTop: '20px', fontSize: '10px' }}>
+              <p style={{ marginBottom: '40px' }}>Receiver Sign:</p>
+              <p>_____________________</p>
+            </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <p style={{ marginBottom: '10px' }}>For {company.name}</p>
-            <div style={{ marginBottom: '10px' }}>
+          
+          {/* Right Column: Authorized Signatory Stamp */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', fontSize: '10.5px', textAlign: 'center', alignSelf: 'end' }}>
+            <p style={{ marginBottom: '10px', fontWeight: 'bold' }}>For {company.name}</p>
+            <div style={{ marginBottom: '8px' }}>
               <CompanyStamp />
             </div>
-            <p>Authorised Signatory</p>
+            <p style={{ fontWeight: 'bold' }}>Authorised Signatory</p>
           </div>
         </div>
       </div>
@@ -1671,7 +1830,6 @@ const EverReadySystem = () => {
     { id: 'invoices', label: '🧾 Invoices' },
     { id: 'quotations', label: '📋 Quotations' },
     { id: 'purchase-orders', label: '📦 Purchase Orders' },
-    { id: 'upload-po', label: '📤 Upload PO' },
     { id: 'clients', label: '🏢 Clients' },
     { id: 'ledger', label: '🏛️ Ledger Statement' },
     { id: 'reports', label: '📊 Reports & GST' },
@@ -1878,7 +2036,7 @@ const EverReadySystem = () => {
                 quotationDate: new Date().toISOString().split('T')[0],
                 validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                 clientId: '',
-                items: [{ sr: 1, desc: '', hsn: '', qty: 1, rate: 0, total: 0 }],
+                items: [{ sr: 1, desc: '', hsn: '', uom: 'Nos', qty: 1, rate: 0, total: 0, cgstRate: 9, sgstRate: 9 }],
                 taxType: 'CGST_SGST',
                 cgstRate: 9,
                 sgstRate: 9,
@@ -2119,6 +2277,7 @@ const EverReadySystem = () => {
                         <th style={{ padding: '16px', fontSize: '12px', color: '#F0A500', fontWeight: 'bold', textAlign: 'right' }}>Grand Total</th>
                         <th style={{ padding: '16px', fontSize: '12px', color: '#F0A500', fontWeight: 'bold', textAlign: 'right' }}>Total Paid</th>
                         <th style={{ padding: '16px', fontSize: '12px', color: '#F0A500', fontWeight: 'bold', textAlign: 'right' }}>Outstanding</th>
+                        <th style={{ padding: '16px', fontSize: '12px', color: '#F0A500', fontWeight: 'bold', textAlign: 'center', width: '120px' }}>PO File</th>
                         <th style={{ padding: '16px', fontSize: '12px', color: '#F0A500', fontWeight: 'bold', textAlign: 'center', width: '110px' }}>Status</th>
                         <th style={{ padding: '16px', fontSize: '12px', color: '#F0A500', fontWeight: 'bold', textAlign: 'center', width: '180px' }}>Actions</th>
                       </tr>
@@ -2137,6 +2296,50 @@ const EverReadySystem = () => {
                           <td style={{ padding: '14px 16px', fontSize: '13px', color: '#27ae60', fontWeight: '600', textAlign: 'right' }}>{formatCurrency(inv.total_paid)}</td>
                           <td style={{ padding: '14px 16px', fontSize: '13px', color: inv.remaining_amount > 0 ? '#e74c3c' : '#8a96b0', fontWeight: '600', textAlign: 'right' }}>{formatCurrency(inv.remaining_amount)}</td>
                           <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                            {inv.po_file_name ? (
+                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const byteCharacters = atob(inv.po_file_data);
+                                    const byteNumbers = new Array(byteCharacters.length);
+                                    for (let i = 0; i < byteCharacters.length; i++) {
+                                      byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                    }
+                                    const byteArray = new Uint8Array(byteNumbers);
+                                    const blob = new Blob([byteArray], { type: inv.po_file_type });
+                                    const url = URL.createObjectURL(blob);
+                                    window.open(url, '_blank');
+                                  }}
+                                  style={{ padding: '6px 8px', background: 'rgba(39,174,96,.15)', border: 'none', borderRadius: '4px', color: '#27ae60', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold' }}
+                                  title={inv.po_file_name}
+                                >
+                                  <Eye size={12} /> View
+                                </button>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteInvoicePO(inv.id);
+                                  }}
+                                  style={{ padding: '6px', background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer' }}
+                                  title="Delete PO File"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            ) : (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerPOUpload(inv.id);
+                                }}
+                                style={{ padding: '6px 8px', background: 'rgba(240,165,0,.15)', border: 'none', borderRadius: '4px', color: '#F0A500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold' }}
+                              >
+                                <Upload size={12} /> Upload
+                              </button>
+                            )}
+                          </td>
+                          <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                             <span style={{ 
                               display: 'inline-block', 
                               padding: '4px 8px', 
@@ -2151,12 +2354,13 @@ const EverReadySystem = () => {
                           </td>
                           <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                              <button onClick={() => viewInvoiceDetail(inv.id)} style={{ padding: '6px 10px', background: 'rgba(240,165,0,.15)', border: 'none', borderRadius: '4px', color: '#F0A500', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}>Manage</button>
+                              <button onClick={(e) => { e.stopPropagation(); viewInvoiceDetail(inv.id); }} style={{ padding: '6px 10px', background: 'rgba(240,165,0,.15)', border: 'none', borderRadius: '4px', color: '#F0A500', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}>Manage</button>
                               {inv.remaining_amount > 0 && (
-                                <button onClick={() => openAddPaymentModal(inv)} style={{ padding: '6px 10px', background: '#27ae60', border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}>+ Collect</button>
+                                <button onClick={(e) => { e.stopPropagation(); openAddPaymentModal(inv); }} style={{ padding: '6px 10px', background: '#27ae60', border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}>+ Collect</button>
                               )}
                               <button 
-                                onClick={() => { 
+                                onClick={(e) => { 
+                                  e.stopPropagation();
                                   setReminderInvoice(inv); 
                                   const isPaid = inv.payment_status === 'PAID' || inv.remaining_amount <= 0;
                                   setReminderTemplate(isPaid ? 'created' : (inv.remaining_amount === inv.gross_total ? 'pending' : 'partial')); 
@@ -2166,8 +2370,8 @@ const EverReadySystem = () => {
                               >
                                 <Share2 size={13} />
                               </button>
-                              <button onClick={() => editInvoice(inv)} style={{ padding: '6px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer' }}><Edit2 size={14} /></button>
-                              <button onClick={() => deleteInvoice(inv.id)} style={{ padding: '6px', background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer' }}><Trash2 size={14} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); editInvoice(inv); }} style={{ padding: '6px', background: 'none', border: 'none', color: '#3498db', cursor: 'pointer' }}><Edit2 size={14} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); deleteInvoice(inv.id); }} style={{ padding: '6px', background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer' }}><Trash2 size={14} /></button>
                             </div>
                           </td>
                         </tr>
@@ -3394,7 +3598,7 @@ const EverReadySystem = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>PO No</label>
                 <input type="text" value={currentInvoice.poNo} onChange={(e) => setCurrentInvoice({ ...currentInvoice, poNo: e.target.value })} placeholder="e.g. PO-123" style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px' }} />
@@ -3403,14 +3607,6 @@ const EverReadySystem = () => {
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>PO Date</label>
                 <input type="date" value={currentInvoice.poDate} onChange={(e) => setCurrentInvoice({ ...currentInvoice, poDate: e.target.value })} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px' }} />
               </div>
-              <div>
-                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>CGST %</label>
-                <input type="number" value={currentInvoice.cgstRate} onChange={(e) => { const totals = calculateTotals(currentInvoice.items, currentInvoice.taxType, parseFloat(e.target.value) || 0, currentInvoice.sgstRate, currentInvoice.igstRate); setCurrentInvoice({ ...currentInvoice, cgstRate: parseFloat(e.target.value) || 0, ...totals }); }} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px' }} />
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>SGST %</label>
-                <input type="number" value={currentInvoice.sgstRate} onChange={(e) => { const totals = calculateTotals(currentInvoice.items, currentInvoice.taxType, currentInvoice.cgstRate, parseFloat(e.target.value) || 0, currentInvoice.igstRate); setCurrentInvoice({ ...currentInvoice, sgstRate: parseFloat(e.target.value) || 0, ...totals }); }} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px' }} />
-              </div>
             </div>
 
             <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#F0A500', marginBottom: '12px' }}>📦 Items</h3>
@@ -3418,13 +3614,17 @@ const EverReadySystem = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid rgba(240,165,0,.2)' }}>
                 <thead>
                   <tr style={{ background: 'rgba(240,165,0,.08)' }}>
-                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '60px' }}>Sr</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '45px' }}>Sr</th>
                     <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold' }}>Description</th>
-                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '100px' }}>HSN</th>
-                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '80px' }}>Qty</th>
-                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '120px' }}>Rate</th>
-                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '140px' }}>Total</th>
-                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '40px' }}></th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '80px' }}>HSN</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '70px' }}>UOM</th>
+                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '60px' }}>Qty</th>
+                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '90px' }}>Rate</th>
+                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '70px' }}>CGST %</th>
+                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '70px' }}>SGST %</th>
+                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '80px' }}>Tax Amt</th>
+                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '110px' }}>Total</th>
+                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '30px' }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3433,8 +3633,21 @@ const EverReadySystem = () => {
                       <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.sr} onChange={(e) => updateInvoiceItem(idx, 'sr', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input placeholder="Description" value={item.desc} onChange={(e) => updateInvoiceItem(idx, 'desc', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input placeholder="HSN" value={item.hsn} onChange={(e) => updateInvoiceItem(idx, 'hsn', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
+                      <td style={{ padding: '8px', fontSize: '11px' }}>
+                        <input 
+                          placeholder="UOM" 
+                          value={item.uom || ''} 
+                          onChange={(e) => updateInvoiceItem(idx, 'uom', e.target.value)} 
+                          style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} 
+                        />
+                      </td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.qty} onChange={(e) => updateInvoiceItem(idx, 'qty', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.rate} onChange={(e) => updateInvoiceItem(idx, 'rate', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
+                      <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.cgstRate !== undefined ? item.cgstRate : 9} onChange={(e) => updateInvoiceItem(idx, 'cgstRate', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
+                      <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.sgstRate !== undefined ? item.sgstRate : 9} onChange={(e) => updateInvoiceItem(idx, 'sgstRate', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
+                      <td style={{ padding: '8px', fontSize: '11px', textAlign: 'right', color: '#8a96b0' }}>
+                        ₹{getItemTaxAmount(item, currentInvoice.taxType, currentInvoice.discount, currentInvoice.items).toFixed(2)}
+                      </td>
                       <td style={{ padding: '8px', fontSize: '11px', background: 'rgba(240,165,0,.08)', fontWeight: 'bold', color: '#F0A500', textAlign: 'right' }}>₹{(item.qty * item.rate).toFixed(2)}</td>
                       <td style={{ padding: '8px', textAlign: 'center' }}><button onClick={() => removeInvoiceItem(idx)} style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: '14px' }}>✕</button></td>
                     </tr>
@@ -3456,7 +3669,7 @@ const EverReadySystem = () => {
                   value={currentInvoice.discount}
                   onChange={(e) => {
                     const discount = parseFloat(e.target.value) || 0;
-                    const totals = calculateTotals(currentInvoice.items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, discount, currentInvoice.transportCharges);
+                    const totals = calculateTotals(currentInvoice.items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, discount, currentInvoice.transportCharges, true);
                     setCurrentInvoice({ ...currentInvoice, discount, ...totals });
                   }}
                   style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(231,76,60,.4)', borderRadius: '8px', color: '#e74c3c', fontSize: '13px', fontWeight: 'bold' }}
@@ -3472,7 +3685,7 @@ const EverReadySystem = () => {
                   value={currentInvoice.transportCharges}
                   onChange={(e) => {
                     const transportCharges = parseFloat(e.target.value) || 0;
-                    const totals = calculateTotals(currentInvoice.items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, currentInvoice.discount, transportCharges);
+                    const totals = calculateTotals(currentInvoice.items, currentInvoice.taxType, currentInvoice.cgstRate, currentInvoice.sgstRate, currentInvoice.igstRate, currentInvoice.discount, transportCharges, true);
                     setCurrentInvoice({ ...currentInvoice, transportCharges, ...totals });
                   }}
                   style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(39,174,96,.4)', borderRadius: '8px', color: '#27ae60', fontSize: '13px', fontWeight: 'bold' }}
@@ -3481,11 +3694,9 @@ const EverReadySystem = () => {
             </div>
 
             <div style={{ background: 'rgba(240,165,0,.06)', border: '1px solid rgba(240,165,0,.2)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
                 <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>SUBTOTAL</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{currentInvoice.subtotal.toFixed(2)}</p></div>
                 <div><p style={{ fontSize: '10px', color: '#e74c3c', margin: '0' }}>DISCOUNT</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#e74c3c' }}>-₹{(currentInvoice.discount || 0).toFixed(2)}</p></div>
-                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>CGST</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{currentInvoice.cgstAmount.toFixed(2)}</p></div>
-                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>SGST</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{currentInvoice.sgstAmount.toFixed(2)}</p></div>
                 <div><p style={{ fontSize: '10px', color: '#27ae60', margin: '0' }}>TRANSPORT</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#27ae60' }}>+₹{(currentInvoice.transportCharges || 0).toFixed(2)}</p></div>
                 <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>GRAND TOTAL</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{currentInvoice.grossTotal.toFixed(2)}</p></div>
               </div>
@@ -3593,22 +3804,14 @@ const EverReadySystem = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Tax Type</label>
-                <select value={currentQuotation.taxType} onChange={(e) => { const totals = calculateTotals(currentQuotation.items, e.target.value, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate); setCurrentQuotation({ ...currentQuotation, taxType: e.target.value, ...totals }); }} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: '#F0A500', fontSize: '12px', fontWeight: 'bold' }}>
+                <select value={currentQuotation.taxType} onChange={(e) => { const totals = calculateTotals(currentQuotation.items, e.target.value, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, currentQuotation.discount, currentQuotation.transportCharges, true); setCurrentQuotation({ ...currentQuotation, taxType: e.target.value, ...totals }); }} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: '#F0A500', fontSize: '12px', fontWeight: 'bold' }}>
                   <option value="CGST_SGST">CGST + SGST</option>
                   <option value="IGST">IGST</option>
                   <option value="NONE">No Tax</option>
                 </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>CGST %</label>
-                <input type="number" value={currentQuotation.cgstRate} onChange={(e) => { const totals = calculateTotals(currentQuotation.items, currentQuotation.taxType, parseFloat(e.target.value) || 0, currentQuotation.sgstRate, currentQuotation.igstRate); setCurrentQuotation({ ...currentQuotation, cgstRate: parseFloat(e.target.value) || 0, ...totals }); }} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px' }} />
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>SGST %</label>
-                <input type="number" value={currentQuotation.sgstRate} onChange={(e) => { const totals = calculateTotals(currentQuotation.items, currentQuotation.taxType, currentQuotation.cgstRate, parseFloat(e.target.value) || 0, currentQuotation.igstRate); setCurrentQuotation({ ...currentQuotation, sgstRate: parseFloat(e.target.value) || 0, ...totals }); }} style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '12px' }} />
               </div>
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Status</label>
@@ -3625,13 +3828,17 @@ const EverReadySystem = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid rgba(240,165,0,.2)' }}>
                 <thead>
                   <tr style={{ background: 'rgba(240,165,0,.08)' }}>
-                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '60px' }}>Sr</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '45px' }}>Sr</th>
                     <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold' }}>Description</th>
-                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '100px' }}>HSN</th>
-                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '80px' }}>Qty</th>
-                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '120px' }}>Rate</th>
-                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '140px' }}>Total</th>
-                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '40px' }}></th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '80px' }}>HSN</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '70px' }}>UOM</th>
+                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '60px' }}>Qty</th>
+                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '90px' }}>Rate</th>
+                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '70px' }}>CGST %</th>
+                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '70px' }}>SGST %</th>
+                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '80px' }}>Tax Amt</th>
+                    <th style={{ padding: '8px', textAlign: 'right', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '110px' }}>Total</th>
+                    <th style={{ padding: '8px', textAlign: 'center', fontSize: '10px', color: '#F0A500', fontWeight: 'bold', width: '30px' }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3640,8 +3847,21 @@ const EverReadySystem = () => {
                       <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.sr} onChange={(e) => updateQuotationItem(idx, 'sr', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input placeholder="Description" value={item.desc} onChange={(e) => updateQuotationItem(idx, 'desc', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input placeholder="HSN" value={item.hsn} onChange={(e) => updateQuotationItem(idx, 'hsn', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
+                      <td style={{ padding: '8px', fontSize: '11px' }}>
+                        <input 
+                          placeholder="UOM" 
+                          value={item.uom || ''} 
+                          onChange={(e) => updateQuotationItem(idx, 'uom', e.target.value)} 
+                          style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} 
+                        />
+                      </td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.qty} onChange={(e) => updateQuotationItem(idx, 'qty', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
                       <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.rate} onChange={(e) => updateQuotationItem(idx, 'rate', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
+                      <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.cgstRate !== undefined ? item.cgstRate : 9} onChange={(e) => updateQuotationItem(idx, 'cgstRate', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
+                      <td style={{ padding: '8px', fontSize: '11px' }}><input type="number" value={item.sgstRate !== undefined ? item.sgstRate : 9} onChange={(e) => updateQuotationItem(idx, 'sgstRate', e.target.value)} style={{ width: '100%', padding: '4px', background: '#0e1829', border: '1px solid rgba(138,150,176,.2)', borderRadius: '4px', color: 'white' }} /></td>
+                      <td style={{ padding: '8px', fontSize: '11px', textAlign: 'right', color: '#8a96b0' }}>
+                        ₹{getItemTaxAmount(item, currentQuotation.taxType, currentQuotation.discount, currentQuotation.items).toFixed(2)}
+                      </td>
                       <td style={{ padding: '8px', fontSize: '11px', background: 'rgba(240,165,0,.08)', fontWeight: 'bold', color: '#F0A500', textAlign: 'right' }}>₹{(item.qty * item.rate).toFixed(2)}</td>
                       <td style={{ padding: '8px', textAlign: 'center' }}><button onClick={() => removeQuotationItem(idx)} style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: '14px' }}>✕</button></td>
                     </tr>
@@ -3663,7 +3883,7 @@ const EverReadySystem = () => {
                   value={currentQuotation.discount}
                   onChange={(e) => {
                     const discount = parseFloat(e.target.value) || 0;
-                    const totals = calculateTotals(currentQuotation.items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, discount, currentQuotation.transportCharges);
+                    const totals = calculateTotals(currentQuotation.items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, discount, currentQuotation.transportCharges, true);
                     setCurrentQuotation({ ...currentQuotation, discount, ...totals });
                   }}
                   style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(231,76,60,.4)', borderRadius: '8px', color: '#e74c3c', fontSize: '13px', fontWeight: 'bold' }}
@@ -3679,7 +3899,7 @@ const EverReadySystem = () => {
                   value={currentQuotation.transportCharges}
                   onChange={(e) => {
                     const transportCharges = parseFloat(e.target.value) || 0;
-                    const totals = calculateTotals(currentQuotation.items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, currentQuotation.discount, transportCharges);
+                    const totals = calculateTotals(currentQuotation.items, currentQuotation.taxType, currentQuotation.cgstRate, currentQuotation.sgstRate, currentQuotation.igstRate, currentQuotation.discount, transportCharges, true);
                     setCurrentQuotation({ ...currentQuotation, transportCharges, ...totals });
                   }}
                   style={{ width: '100%', padding: '10px', background: '#0e1829', border: '1px solid rgba(39,174,96,.4)', borderRadius: '8px', color: '#27ae60', fontSize: '13px', fontWeight: 'bold' }}
@@ -3688,11 +3908,9 @@ const EverReadySystem = () => {
             </div>
 
             <div style={{ background: 'rgba(240,165,0,.06)', border: '1px solid rgba(240,165,0,.2)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
                 <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>SUBTOTAL</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{currentQuotation.subtotal.toFixed(2)}</p></div>
                 <div><p style={{ fontSize: '10px', color: '#e74c3c', margin: '0' }}>DISCOUNT</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#e74c3c' }}>-₹{(currentQuotation.discount || 0).toFixed(2)}</p></div>
-                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>CGST</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{currentQuotation.cgstAmount.toFixed(2)}</p></div>
-                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>SGST</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{currentQuotation.sgstAmount.toFixed(2)}</p></div>
                 <div><p style={{ fontSize: '10px', color: '#27ae60', margin: '0' }}>TRANSPORT</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#27ae60' }}>+₹{(currentQuotation.transportCharges || 0).toFixed(2)}</p></div>
                 <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>GRAND TOTAL</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{currentQuotation.grossTotal.toFixed(2)}</p></div>
               </div>
@@ -3824,11 +4042,15 @@ const EverReadySystem = () => {
                     <tr style={{ background: 'rgba(255,255,255,.05)', borderBottom: '1px solid rgba(138,150,176,.2)' }}>
                       <th style={{ padding: '10px', width: '40px', textAlign: 'center' }}>#</th>
                       <th style={{ padding: '10px' }}>Description *</th>
-                      <th style={{ padding: '10px', width: '100px' }}>HSN</th>
-                      <th style={{ padding: '10px', width: '80px', textAlign: 'center' }}>Qty *</th>
-                      <th style={{ padding: '10px', width: '120px', textAlign: 'right' }}>Rate (₹) *</th>
-                      <th style={{ padding: '10px', width: '120px', textAlign: 'right' }}>Total (₹)</th>
-                      <th style={{ padding: '10px', width: '40px' }}></th>
+                      <th style={{ padding: '10px', width: '80px' }}>HSN</th>
+                      <th style={{ padding: '10px', width: '70px' }}>UOM</th>
+                      <th style={{ padding: '10px', width: '60px', textAlign: 'center' }}>Qty *</th>
+                      <th style={{ padding: '10px', width: '90px', textAlign: 'right' }}>Rate *</th>
+                      <th style={{ padding: '10px', width: '70px', textAlign: 'center' }}>CGST %</th>
+                      <th style={{ padding: '10px', width: '70px', textAlign: 'center' }}>SGST %</th>
+                      <th style={{ padding: '10px', width: '80px', textAlign: 'right' }}>Tax Amt</th>
+                      <th style={{ padding: '10px', width: '110px', textAlign: 'right' }}>Total (₹)</th>
+                      <th style={{ padding: '10px', width: '30px' }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3850,11 +4072,18 @@ const EverReadySystem = () => {
                           }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px' }} />
                         </td>
                         <td style={{ padding: '6px' }}>
+                          <input type="text" value={item.uom || ''} placeholder="UOM" onChange={(e) => {
+                            const newItems = [...currentPurchaseOrder.items];
+                            newItems[index].uom = e.target.value;
+                            setCurrentPurchaseOrder({ ...currentPurchaseOrder, items: newItems });
+                          }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px' }} />
+                        </td>
+                        <td style={{ padding: '6px' }}>
                           <input type="number" min="1" value={item.qty} onChange={(e) => {
                             const newItems = [...currentPurchaseOrder.items];
                             newItems[index].qty = parseFloat(e.target.value) || 0;
                             newItems[index].total = newItems[index].qty * newItems[index].rate;
-                            const totals = calculateTotals(newItems, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
+                            const totals = calculateTotals(newItems, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges, true);
                             setCurrentPurchaseOrder({ ...currentPurchaseOrder, items: newItems, ...totals });
                           }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px', textAlign: 'center' }} />
                         </td>
@@ -3863,9 +4092,28 @@ const EverReadySystem = () => {
                             const newItems = [...currentPurchaseOrder.items];
                             newItems[index].rate = parseFloat(e.target.value) || 0;
                             newItems[index].total = newItems[index].qty * newItems[index].rate;
-                            const totals = calculateTotals(newItems, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
+                            const totals = calculateTotals(newItems, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges, true);
                             setCurrentPurchaseOrder({ ...currentPurchaseOrder, items: newItems, ...totals });
                           }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px', textAlign: 'right' }} />
+                        </td>
+                        <td style={{ padding: '6px' }}>
+                          <input type="number" min="0" value={item.cgstRate !== undefined ? item.cgstRate : 9} onChange={(e) => {
+                            const newItems = [...currentPurchaseOrder.items];
+                            newItems[index].cgstRate = parseFloat(e.target.value) || 0;
+                            const totals = calculateTotals(newItems, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges, true);
+                            setCurrentPurchaseOrder({ ...currentPurchaseOrder, items: newItems, ...totals });
+                          }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px', textAlign: 'center' }} />
+                        </td>
+                        <td style={{ padding: '6px' }}>
+                          <input type="number" min="0" value={item.sgstRate !== undefined ? item.sgstRate : 9} onChange={(e) => {
+                            const newItems = [...currentPurchaseOrder.items];
+                            newItems[index].sgstRate = parseFloat(e.target.value) || 0;
+                            const totals = calculateTotals(newItems, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges, true);
+                            setCurrentPurchaseOrder({ ...currentPurchaseOrder, items: newItems, ...totals });
+                          }} style={{ width: '100%', padding: '6px', background: 'rgba(255,255,255,.05)', border: '1px solid transparent', borderRadius: '4px', color: 'white', fontSize: '13px', textAlign: 'center' }} />
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'right', color: '#8a96b0' }}>
+                          ₹{getItemTaxAmount(item, currentPurchaseOrder.taxType, currentPurchaseOrder.discount, currentPurchaseOrder.items).toFixed(2)}
                         </td>
                         <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold' }}>{item.total.toFixed(2)}</td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
@@ -3881,14 +4129,14 @@ const EverReadySystem = () => {
             </div>
 
             {/* Calculations */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '24px', background: '#0e1829', padding: '20px', borderRadius: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px', background: '#0e1829', padding: '20px', borderRadius: '12px' }}>
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Tax Configuration</label>
                 <select
                   value={currentPurchaseOrder.taxType}
                   onChange={(e) => {
                     const taxType = e.target.value;
-                    const totals = calculateTotals(currentPurchaseOrder.items, taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
+                    const totals = calculateTotals(currentPurchaseOrder.items, taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges, true);
                     setCurrentPurchaseOrder({ ...currentPurchaseOrder, taxType, ...totals });
                   }}
                   style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }}
@@ -3898,37 +4146,6 @@ const EverReadySystem = () => {
                   <option value="NONE">No GST</option>
                 </select>
               </div>
-              {currentPurchaseOrder.taxType === 'CGST_SGST' && (
-                <>
-                  <div>
-                    <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>CGST Rate (%)</label>
-                    <input type="number" min="0" value={currentPurchaseOrder.cgstRate} onChange={(e) => {
-                      const cgstRate = parseFloat(e.target.value) || 0;
-                      const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
-                      setCurrentPurchaseOrder({ ...currentPurchaseOrder, cgstRate, ...totals });
-                    }} style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>SGST Rate (%)</label>
-                    <input type="number" min="0" value={currentPurchaseOrder.sgstRate} onChange={(e) => {
-                      const sgstRate = parseFloat(e.target.value) || 0;
-                      const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
-                      setCurrentPurchaseOrder({ ...currentPurchaseOrder, sgstRate, ...totals });
-                    }} style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
-                  </div>
-                </>
-              )}
-              {currentPurchaseOrder.taxType === 'IGST' && (
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>IGST Rate (%)</label>
-                  <input type="number" min="0" value={currentPurchaseOrder.igstRate} onChange={(e) => {
-                    const igstRate = parseFloat(e.target.value) || 0;
-                    const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, igstRate, currentPurchaseOrder.discount, currentPurchaseOrder.transportCharges);
-                    setCurrentPurchaseOrder({ ...currentPurchaseOrder, igstRate, ...totals });
-                  }} style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(138,150,176,.25)', borderRadius: '8px', color: 'white', fontSize: '13px' }} />
-                </div>
-              )}
-              {currentPurchaseOrder.taxType === 'NONE' && <div style={{ gridColumn: 'span 2' }}></div>}
               <div>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#8a96b0', display: 'block', marginBottom: '6px' }}>Discount (₹)</label>
                 <input
@@ -3937,7 +4154,7 @@ const EverReadySystem = () => {
                   value={currentPurchaseOrder.discount}
                   onChange={(e) => {
                     const discount = parseFloat(e.target.value) || 0;
-                    const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, discount, currentPurchaseOrder.transportCharges);
+                    const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, discount, currentPurchaseOrder.transportCharges, true);
                     setCurrentPurchaseOrder({ ...currentPurchaseOrder, discount, ...totals });
                   }}
                   style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(231,76,60,.4)', borderRadius: '8px', color: '#e74c3c', fontSize: '13px', fontWeight: 'bold' }}
@@ -3951,7 +4168,7 @@ const EverReadySystem = () => {
                   value={currentPurchaseOrder.transportCharges}
                   onChange={(e) => {
                     const transportCharges = parseFloat(e.target.value) || 0;
-                    const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, transportCharges);
+                    const totals = calculateTotals(currentPurchaseOrder.items, currentPurchaseOrder.taxType, currentPurchaseOrder.cgstRate, currentPurchaseOrder.sgstRate, currentPurchaseOrder.igstRate, currentPurchaseOrder.discount, transportCharges, true);
                     setCurrentPurchaseOrder({ ...currentPurchaseOrder, transportCharges, ...totals });
                   }}
                   style={{ width: '100%', padding: '10px', background: '#192338', border: '1px solid rgba(39,174,96,.4)', borderRadius: '8px', color: '#27ae60', fontSize: '13px', fontWeight: 'bold' }}
@@ -3960,11 +4177,9 @@ const EverReadySystem = () => {
             </div>
 
             <div style={{ background: 'rgba(240,165,0,.06)', border: '1px solid rgba(240,165,0,.2)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
                 <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>SUBTOTAL</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{(currentPurchaseOrder.subtotal || 0).toFixed(2)}</p></div>
                 <div><p style={{ fontSize: '10px', color: '#e74c3c', margin: '0' }}>DISCOUNT</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#e74c3c' }}>-₹{(currentPurchaseOrder.discount || 0).toFixed(2)}</p></div>
-                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>CGST</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{(currentPurchaseOrder.cgstAmount || 0).toFixed(2)}</p></div>
-                <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>SGST</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{(currentPurchaseOrder.sgstAmount || 0).toFixed(2)}</p></div>
                 <div><p style={{ fontSize: '10px', color: '#27ae60', margin: '0' }}>TRANSPORT</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#27ae60' }}>+₹{(currentPurchaseOrder.transportCharges || 0).toFixed(2)}</p></div>
                 <div><p style={{ fontSize: '10px', color: '#8a96b0', margin: '0' }}>GRAND TOTAL</p><p style={{ fontSize: '16px', fontWeight: '700', color: '#F0A500' }}>₹{(currentPurchaseOrder.grossTotal || 0).toFixed(2)}</p></div>
               </div>
@@ -4079,6 +4294,42 @@ const EverReadySystem = () => {
           </div>
         </div>
       )}
+
+
+
+      {confirmConfig && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ background: '#152035', border: '1px solid rgba(231,76,60,.3)', borderRadius: '12px', padding: '24px', maxWidth: '420px', width: '100%', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
+            <h3 style={{ color: '#e74c3c', fontSize: '18px', marginBottom: '12px', fontWeight: 'bold' }}>{confirmConfig.title}</h3>
+            <p style={{ color: '#8a96b0', fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>{confirmConfig.message}</p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button 
+                onClick={() => setConfirmConfig(null)} 
+                style={{ padding: '8px 16px', background: 'rgba(255,255,255,.05)', border: 'none', borderRadius: '6px', color: '#8a96b0', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  confirmConfig.onConfirm();
+                  setConfirmConfig(null);
+                }} 
+                style={{ padding: '8px 16px', background: '#e74c3c', border: 'none', borderRadius: '6px', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <input 
+        type="file" 
+        ref={poInputRef} 
+        style={{ display: 'none' }} 
+        onChange={handlePOFileChange} 
+        accept="application/pdf, image/*" 
+      />
 
     </div>
   );

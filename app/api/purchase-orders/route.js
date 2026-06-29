@@ -31,6 +31,9 @@ function transformPO(body) {
     qty: item.qty ?? 0,
     rate: item.rate ?? 0,
     total: item.total ?? 0,
+    uom: item.uom || 'Nos',
+    cgstRate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+    sgstRate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
   }));
 
   return { po, items: transformedItems };
@@ -42,6 +45,11 @@ function formatPO(po) {
     ...item,
     poId: item.purchase_order_id,
     purchase_order_id: item.purchase_order_id,
+    uom: item.uom || 'Nos',
+    cgstRate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+    cgst_rate: item.cgstRate !== undefined ? item.cgstRate : (item.cgst_rate !== undefined ? item.cgst_rate : 9),
+    sgstRate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9),
+    sgst_rate: item.sgstRate !== undefined ? item.sgstRate : (item.sgst_rate !== undefined ? item.sgst_rate : 9)
   }));
   const clientInfo = po.clients || {};
 
